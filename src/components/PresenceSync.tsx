@@ -8,6 +8,8 @@ export default function PresenceSync() {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    let channel: any = null;
+
     const syncPresence = async () => {
       // 1. Get current user
       const { data: { user } } = await supabase.auth.getUser();
@@ -15,19 +17,19 @@ export default function PresenceSync() {
 
       setUserId(user.id);
 
-      // 2. Fetch profile for display name and role
+      // 2. Fetch profile for role
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role, email, display_name")
+        .select("role")
         .eq("id", user.id)
         .single();
 
       if (!profile) return;
 
-      const userName = profile.display_name || user.email?.split('@')[0] || "Staff";
+      const userName = user.user_metadata?.full_name || user.email?.split('@')[0] || "Staff";
 
       // 3. Setup Presence Channel
-      const channel = supabase.channel("pharmacy-presence", {
+      channel = supabase.channel("pharmacy-presence", {
         config: {
           presence: {
             key: user.id,
@@ -37,9 +39,9 @@ export default function PresenceSync() {
 
       channel
         .on("presence", { event: "sync" }, () => {
-          // You could track local state here if needed
+          // Sync logic
         })
-        .subscribe(async (status) => {
+        .subscribe(async (status: string) => {
           if (status === "SUBSCRIBED") {
             await channel.track({
               user_id: user.id,
@@ -49,13 +51,15 @@ export default function PresenceSync() {
             });
           }
         });
-
-      return () => {
-        channel.unsubscribe();
-      };
     };
 
     syncPresence();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   return null; // This component doesn't render anything

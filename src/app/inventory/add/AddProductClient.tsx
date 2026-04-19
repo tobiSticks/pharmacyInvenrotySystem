@@ -14,8 +14,10 @@ import {
   AlertCircle,
   Table as TableIcon,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  LogOut
 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -24,6 +26,7 @@ type Mode = "manual" | "bulk";
 
 export default function AddProductClient() {
   const [mode, setMode] = useState<Mode>("manual");
+  const supabase = createClient();
   const [bulkData, setBulkData] = useState<any[]>([]);
   const [state, formAction, isPending] = useActionState(batchAddProductsAction, undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -116,7 +119,15 @@ export default function AddProductClient() {
           <h1 className="text-4xl font-extrabold text-white tracking-tight">Accept New Stock</h1>
         </div>
 
-        <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl w-fit">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+          >
+            <LogOut size={16} className="text-rose-500" /> SIGN OUT
+          </button>
+
+          <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl w-fit">
           <button 
             onClick={() => setMode("manual")}
             className={`px-6 py-2 rounded-xl text-sm font-semibold transition-all ${mode === "manual" ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
@@ -131,6 +142,7 @@ export default function AddProductClient() {
           </button>
         </div>
       </div>
+    </div>
 
       {state?.error && (
         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 flex items-center gap-3">

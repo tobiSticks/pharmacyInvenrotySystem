@@ -24,10 +24,10 @@ export async function loginAction(prevState: unknown, formData: FormData) {
     return { error: "Invalid email or password." };
   }
 
-  // 2. Fetch the profile details
+  // 2. Fetch the profile details (including role)
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("branch_name")
+    .select("branch_name, role")
     .eq("id", authData.user.id)
     .single();
 
@@ -36,12 +36,19 @@ export async function loginAction(prevState: unknown, formData: FormData) {
     return { error: "Profile not found. Please contact an administrator." };
   }
 
-  // 3. Verify branch_name (case sensitive or insensitive based on setup, here we'll do exact string match)
-  if (profile.branch_name !== branchName) {
+  // 3. Verify branch_name (Case-insensitive check for better UX)
+  if (profile.branch_name?.toLowerCase().trim() !== branchName.toLowerCase().trim()) {
     await supabase.auth.signOut();
-    return { error: "Access Denied: You are not assigned to this branch." };
+    return { error: "You are not assigned to this branch. Please contact your admin." };
   }
 
-  // 4. On success, Next.js redirect must be returned or called outside try-catch
+  // 4. Role-based redirection
+  const userRole = profile.role?.toString().toLowerCase();
+  
+  if (userRole === "pharmacist") {
+    redirect("/pos/wholesale");
+  }
+
+  // Default redirect for other roles
   redirect("/");
 }

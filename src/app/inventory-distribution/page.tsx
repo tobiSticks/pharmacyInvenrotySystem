@@ -35,7 +35,7 @@ export default async function InventoryDistributionPage() {
     .from("branches")
     .select("*")
     .or(`admin_id.eq.${authData.user.id}${profile?.organization_id ? `,organization_id.eq.${profile.organization_id}` : ''}`)
-    .order("name");
+    .order("branch_name");
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-8 sm:p-12 relative overflow-hidden">
@@ -46,17 +46,7 @@ export default async function InventoryDistributionPage() {
       </div>
 
       <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        <header>
-          <Link href="/" className="text-slate-500 hover:text-indigo-400 flex items-center gap-1 text-sm transition-colors mb-4 group w-fit">
-            <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
-          </Link>
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-emerald-400">
-            Inventory Distribution
-          </h1>
-          <p className="mt-2 text-slate-400 text-lg">
-            Allocate stock from the main warehouse to your specific pharmacy locations.
-          </p>
-        </header>
+        <div className="pt-4" />
 
         <DistributionClient initialProducts={products || []} branches={branches || []} />
       </div>

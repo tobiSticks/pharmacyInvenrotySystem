@@ -2,7 +2,8 @@
  
 import React, { useState, useActionState, useEffect, useTransition } from "react";
 import { distributeInventoryAction, getInventoryAction } from "../actions";
-import { Package, Truck, ArrowRight, AlertCircle, CheckCircle2, ShoppingCart, Store, FlaskConical, Search, MapPin } from "lucide-react";
+import { Package, Truck, ArrowRight, AlertCircle, CheckCircle2, ShoppingCart, Store, FlaskConical, Search, MapPin, LogOut } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 interface Product {
   id: string;
@@ -19,16 +20,17 @@ interface Product {
 
 interface Branch {
   id: string;
-  name: string;
+  branch_name: string;
 }
 
 export default function DistributionClient({ initialProducts, branches }: { initialProducts: Product[], branches: Branch[] }) {
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [products, setProducts] = useState(initialProducts);
   const [distributions, setDistributions] = useState<Record<string, { wholesale: number; retail: number; supermarket: number }>>({});
-  const [isRefreshing, startRefreshing] = useTransition();
+  const [isRefreshing, startTransition] = useTransition();
 
   const [state, formAction, isPending] = useActionState(distributeInventoryAction, undefined);
+  const supabase = createClient();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -37,7 +39,7 @@ export default function DistributionClient({ initialProducts, branches }: { init
   // Refresh products when branch changes
   useEffect(() => {
     if (selectedBranchId) {
-      startRefreshing(async () => {
+      startTransition(async () => {
         const updatedProducts = await getInventoryAction(selectedBranchId);
         setProducts(updatedProducts);
       });
@@ -109,7 +111,9 @@ export default function DistributionClient({ initialProducts, branches }: { init
       }
     }
 
-    formAction({ updates, branchId: selectedBranchId } as any);
+    startTransition(() => {
+      formAction({ updates, branchId: selectedBranchId } as any);
+    });
   };
 
   useEffect(() => {
@@ -117,7 +121,7 @@ export default function DistributionClient({ initialProducts, branches }: { init
       setDistributions({});
       // Refresh current stock levels
       if (selectedBranchId) {
-        startRefreshing(async () => {
+        startTransition(async () => {
           const updatedProducts = await getInventoryAction(selectedBranchId);
           setProducts(updatedProducts);
         });
@@ -127,6 +131,26 @@ export default function DistributionClient({ initialProducts, branches }: { init
 
   return (
     <div className="space-y-6">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+        <div className="flex items-center gap-5">
+          <div className="p-4 bg-emerald-500/10 rounded-3xl border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+            <Truck className="text-emerald-400" size={32} />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-white tracking-tight">Inventory Distribution</h1>
+            <p className="text-slate-500 mt-1 uppercase text-xs font-black tracking-widest flex items-center gap-2">
+              Warehouse <ArrowRight size={12} /> Branch Allocation
+            </p>
+          </div>
+        </div>
+
+        <button 
+          onClick={() => supabase.auth.signOut()}
+          className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+        >
+          <LogOut size={16} className="text-rose-500" /> SIGN OUT
+        </button>
+      </header>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Branch Selector */}
         <div className="flex flex-col gap-2">
@@ -141,7 +165,7 @@ export default function DistributionClient({ initialProducts, branches }: { init
             >
               <option value="">Choose a branch...</option>
               {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name}</option>
+                <option key={branch.id} value={branch.id}>{branch.branch_name}</option>
               ))}
             </select>
             <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-xs">▼</div>

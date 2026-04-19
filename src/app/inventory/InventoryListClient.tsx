@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { Package, Search } from "lucide-react";
+import { Package, Search, LogOut } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 export default function InventoryListClient({ products }: { products: any[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
+  const supabase = createClient();
   
   const safeProducts = products || [];
 
@@ -32,6 +34,15 @@ export default function InventoryListClient({ products }: { products: any[] }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end mb-2">
+        <button 
+          onClick={() => supabase.auth.signOut()}
+          className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+        >
+          <LogOut size={16} className="text-rose-500" /> SIGN OUT
+        </button>
+      </div>
+
       <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-full max-w-md group focus-within:border-indigo-500/50 transition-all shadow-lg">
         <Search size={18} className="text-slate-500 group-focus-within:text-indigo-400" />
         <input 

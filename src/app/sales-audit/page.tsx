@@ -14,8 +14,8 @@ export default async function SalesAuditPage() {
   // Fetch branches for filter
   const { data: branches } = await supabase
     .from("branches")
-    .select("name")
-    .order("name");
+    .select("branch_name")
+    .order("branch_name");
 
   // Fetch sales data
   const { transactions, error } = await getSalesDataAction();
@@ -31,7 +31,7 @@ export default async function SalesAuditPage() {
       <div className="max-w-7xl mx-auto relative z-10 w-full">
         <SalesAuditClient 
           initialTransactions={transactions || []} 
-          branches={branches?.map(b => b.name) || []} 
+          branches={branches?.map(b => b.branch_name) || []} 
         />
       </div>
     </div>

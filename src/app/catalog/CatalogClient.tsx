@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import { updateProductPricesAction, deleteProductAction } from "../actions";
+import { createClient } from "@/utils/supabase/client";
 import { 
   Package, 
   Trash2, 
@@ -13,7 +14,8 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
-  Search
+  Search,
+  LogOut
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,6 +43,8 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
+
+  const supabase = createClient();
 
   const filteredProducts = products.filter(product => {
     const searchLower = searchTerm.toLowerCase();
@@ -162,13 +166,22 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
           </div>
         </div>
 
-        <Link 
-          href="/inventory/add"
-          className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 active:translate-y-0 shrink-0"
-        >
-          <Plus size={20} />
-          Add New Product
-        </Link>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+          >
+            <LogOut size={16} className="text-rose-500" /> SIGN OUT
+          </button>
+          
+          <Link 
+            href="/inventory/add"
+            className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 px-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 active:translate-y-0 shrink-0"
+          >
+            <Plus size={20} />
+            Add New Product
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-full max-w-md group focus-within:border-indigo-500/50 transition-all shadow-lg">
