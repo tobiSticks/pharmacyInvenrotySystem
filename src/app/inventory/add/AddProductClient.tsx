@@ -178,7 +178,7 @@ export default function AddProductClient() {
               {/* Pricing */}
               <div className="space-y-4">
                 <h3 className="text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-                  $ Pricing (USD)
+                  ₦ Pricing (NGN)
                 </h3>
                 <div className="space-y-4">
                   <InputField label="Retail Price" type="number" step="0.01" value={manualProduct.retail_price} onChange={v => setManualProduct({...manualProduct, retail_price: v})} placeholder="0.00" />
@@ -280,10 +280,10 @@ export default function AddProductClient() {
                         <td className="px-4 py-3 text-slate-400 font-mono">{row.sku}</td>
                         <td className="px-4 py-3 text-slate-500">{row.category_name}</td>
                         <td className="px-4 py-3 text-slate-500">{row.product_form}</td>
-                        <td className="px-4 py-3 text-emerald-400 font-bold">${row.retail_price}</td>
-                        <td className="px-4 py-3 text-indigo-400 font-bold">${row.wholesale_price}</td>
-                        <td className="px-4 py-3 text-rose-400 font-bold">${row.supermarket_price}</td>
-                        <td className="px-4 py-3 text-purple-400 font-bold">${row.cost_price}</td>
+                        <td className="px-4 py-3 text-emerald-400 font-bold">₦{row.retail_price}</td>
+                        <td className="px-4 py-3 text-indigo-400 font-bold">₦{row.wholesale_price}</td>
+                        <td className="px-4 py-3 text-rose-400 font-bold">₦{row.supermarket_price}</td>
+                        <td className="px-4 py-3 text-purple-400 font-bold">₦{row.cost_price}</td>
                         <td className="px-4 py-3 text-amber-500 font-bold">{row.quantity}</td>
                         <td className="px-4 py-3 text-slate-500">{row.expiry_date}</td>
                         <td className="px-4 py-3 text-slate-500 font-mono">{row.batch_number}</td>

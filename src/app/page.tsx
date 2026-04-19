@@ -21,6 +21,14 @@ export default async function AdminPage() {
     redirect("/pos/wholesale");
   }
 
+  if (profile?.role?.toString().toLowerCase() === "manager") {
+    redirect("/pos/retail");
+  }
+
+  if (profile?.role?.toString().toLowerCase() === "cashier") {
+    redirect("/pos/cashier");
+  }
+
   if (profile?.role !== "admin") {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center">

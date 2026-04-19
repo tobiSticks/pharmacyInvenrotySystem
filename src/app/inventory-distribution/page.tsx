@@ -46,7 +46,15 @@ export default async function InventoryDistributionPage() {
       </div>
 
       <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        <div className="pt-4" />
+        <Link 
+          href="/" 
+          className="inline-flex items-center gap-2 text-slate-500 hover:text-white transition-colors group"
+        >
+          <div className="p-2 bg-slate-900 border border-slate-800 rounded-xl group-hover:bg-slate-800 transition-all">
+            <ChevronLeft size={20} />
+          </div>
+          <span className="text-xs font-black uppercase tracking-widest">Back to Dashboard</span>
+        </Link>
 
         <DistributionClient initialProducts={products || []} branches={branches || []} />
       </div>

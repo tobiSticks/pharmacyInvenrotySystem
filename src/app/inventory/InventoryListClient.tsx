@@ -94,10 +94,10 @@ export default function InventoryListClient({ products }: { products: any[] }) {
                     <div className="text-xs text-slate-600">{product.product_form}</div>
                   </td>
                   <td className="px-6 py-4 text-emerald-400 font-bold">
-                    ${Number(product.retail_price).toFixed(2)}
+                    ₦{Number(product.retail_price).toFixed(2)}
                   </td>
                   <td className="px-6 py-4 text-indigo-400 font-bold">
-                    ${Number(product.wholesale_price).toFixed(2)}
+                    ₦{Number(product.wholesale_price).toFixed(2)}
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= product.min_stock_level ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>

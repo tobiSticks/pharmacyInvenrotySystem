@@ -505,7 +505,8 @@ export async function submitDailyAuditAction() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const { error } = await supabase
+  const supabaseAdmin = createAdminClient();
+  const { error } = await supabaseAdmin
     .from("transactions")
     .update({ is_audited: true })
     .eq("cashier_id", authData.user.id)
@@ -517,4 +518,242 @@ export async function submitDailyAuditAction() {
   }
   
   return { success: "Daily sales submitted for audit successfully." };
+}
+
+export async function createRetailTransactionAction(
+  _prevState: any,
+  data: { 
+    branchId: string, 
+    buyerName: string, 
+    sellerName: string,
+    totalAmount: number,
+    items: any[] 
+  }
+) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+
+  if (!authData.user) return { error: "Unauthorized" };
+
+  // 1. Get organization_id and branch name from profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id, branch_name")
+    .eq("id", authData.user.id)
+    .single();
+
+  if (!profile?.organization_id) return { error: "Profile incomplete" };
+
+  const supabaseAdmin = createAdminClient();
+
+  // 2. Create the transaction (Pending status)
+  const { data: transaction, error: tError } = await supabaseAdmin
+    .from("transactions")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_name: profile.branch_name,
+      total_amount: data.totalAmount,
+      payment_method: 'pending_payment',
+      status: 'pending',
+      seller_name: data.sellerName,
+      buyer_name: data.buyerName,
+      cashier_id: authData.user.id,
+      cashier_name: data.sellerName, 
+      type: 'retail' // Discriminator for reports
+    })
+    .select("id")
+    .single();
+
+  if (tError) {
+    console.error("Transaction Error:", tError);
+    return { error: "Failed to create transaction: " + tError.message };
+  }
+
+  // 3. Process items and deduct stock
+  const itemsToInsert = data.items.map(item => ({
+    transaction_id: transaction.id,
+    product_id: item.id,
+    product_name: item.name,
+    sku: item.sku,
+    quantity: item.quantity,
+    unit_price: item.retail_price,
+    subtotal: item.retail_price * item.quantity, 
+  }));
+
+  const { error: itemsError } = await supabaseAdmin.from("transaction_items").insert(itemsToInsert);
+  
+  if (itemsError) {
+    return { error: "Failed to record transaction items." };
+  }
+
+  // Deduct stock for each item from RETAIL bucket
+  for (const item of data.items) {
+    const { data: balance } = await supabaseAdmin
+      .from("product_balances")
+      .select("retail_qty")
+      .eq("product_id", item.id)
+      .eq("branch_id", data.branchId)
+      .single();
+
+    if (balance) {
+      await supabaseAdmin
+        .from("product_balances")
+        .update({ retail_qty: Math.max(0, balance.retail_qty - item.quantity) })
+        .eq("product_id", item.id)
+        .eq("branch_id", data.branchId);
+    }
+  }
+
+  revalidatePath("/pos/retail");
+  revalidatePath("/inventory");
+  return { success: true, transactionId: transaction.id };
+}
+
+export async function createSupermarketTransactionAction(
+  _prevState: any,
+  data: { 
+    branchId: string, 
+    buyerName: string, 
+    sellerName: string,
+    totalAmount: number,
+    items: any[] 
+  }
+) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return { error: "Unauthorized" };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id, branch_name")
+    .eq("id", authData.user.id)
+    .single();
+
+  if (!profile?.organization_id) return { error: "Profile incomplete" };
+
+  const supabaseAdmin = createAdminClient();
+
+  // Create the transaction (Completed immediately for supermarket)
+  const { data: transaction, error: tError } = await supabaseAdmin
+    .from("transactions")
+    .insert({
+      organization_id: profile.organization_id,
+      branch_name: profile.branch_name,
+      total_amount: data.totalAmount,
+      payment_method: 'cash',
+      status: 'completed',
+      seller_name: data.sellerName,
+      buyer_name: data.buyerName,
+      cashier_id: authData.user.id,
+      cashier_name: data.sellerName, 
+      type: 'supermarket'
+    })
+    .select("id")
+    .single();
+
+  if (tError) return { error: "Failed to create transaction: " + tError.message };
+
+  // Mapping items for bulk insert
+  const itemsToInsert = data.items.map(item => ({
+    transaction_id: transaction.id,
+    product_id: item.id,
+    product_name: item.name,
+    sku: item.sku,
+    quantity: item.quantity,
+    unit_price: item.supermarket_price,
+    subtotal: item.supermarket_price * item.quantity,
+  }));
+
+  const { error: itemsError } = await supabaseAdmin.from("transaction_items").insert(itemsToInsert);
+  if (itemsError) return { error: "Failed to record items." };
+
+  // Deduct stock from SUPERMARKET bucket
+  for (const item of data.items) {
+    const { data: balance } = await supabaseAdmin
+      .from("product_balances")
+      .select("supermarket_qty")
+      .eq("product_id", item.id)
+      .eq("branch_id", data.branchId)
+      .single();
+
+    if (balance) {
+      await supabaseAdmin
+        .from("product_balances")
+        .update({ supermarket_qty: Math.max(0, balance.supermarket_qty - item.quantity) })
+        .eq("product_id", item.id)
+        .eq("branch_id", data.branchId);
+    }
+  }
+
+  revalidatePath("/pos/cashier");
+  revalidatePath("/inventory");
+  return { success: true, transactionId: transaction.id };
+}
+
+export async function collectPaymentAction(transactionId: string) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return { error: "Unauthorized" };
+
+  const supabaseAdmin = createAdminClient();
+  const { error } = await supabaseAdmin
+    .from("transactions")
+    .update({ 
+      status: 'completed',
+      cashier_id: authData.user.id
+    })
+    .eq("id", transactionId);
+
+  if (error) return { error: "Failed to collect payment: " + error.message };
+  
+  revalidatePath("/pos/cashier");
+  return { success: "Payment collected successfully." };
+}
+
+export async function clearDailyAuditAction(targetStaffId: string) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return { error: "Unauthorized" };
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const supabaseAdmin = createAdminClient();
+  const { error } = await supabaseAdmin
+    .from("transactions")
+    .update({ 
+      is_cleared: true,
+      cleared_at: new Date().toISOString(),
+      cleared_by: authData.user.id
+    })
+    .eq("cashier_id", targetStaffId)
+    .eq("is_audited", true)
+    .eq("is_cleared", false)
+    .gte("created_at", startOfDay.toISOString());
+
+  if (error) return { error: "Failed to clear audit: " + error.message };
+  
+  revalidatePath("/pos/cashier");
+  return { success: "Staff audit cleared successfully." };
+}
+
+export async function checkAuditStatusAction() {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return { hasSales: false, isAudited: false };
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  // Check if there are ANY sales today
+  const { data: sales } = await supabase
+    .from("transactions")
+    .select("id, is_audited")
+    .eq("cashier_id", authData.user.id)
+    .gte("created_at", startOfDay.toISOString());
+
+  if (!sales || sales.length === 0) return { hasSales: false, isAudited: false };
+
+  const isAllAudited = sales.every(s => s.is_audited);
+  return { hasSales: true, isAudited: isAllAudited };
 }
