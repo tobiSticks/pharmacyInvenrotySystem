@@ -1,6 +1,8 @@
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import CatalogClient from "./CatalogClient";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 
 export default async function CatalogPage() {
   const supabase = await createClient();
@@ -41,6 +43,15 @@ export default async function CatalogPage() {
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10 w-full">
+        <Link 
+          href="/" 
+          className="inline-flex items-center gap-2 text-slate-500 hover:text-white transition-colors group mb-8"
+        >
+          <div className="p-2 bg-slate-900 border border-slate-800 rounded-xl group-hover:bg-slate-800 transition-all">
+            <ChevronLeft size={20} />
+          </div>
+          <span className="text-xs font-black uppercase tracking-widest">Back to Dashboard</span>
+        </Link>
         <CatalogClient initialProducts={products || []} />
       </div>
     </div>

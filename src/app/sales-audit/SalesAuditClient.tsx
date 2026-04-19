@@ -5,8 +5,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart 
 } from "recharts";
 import { 
-  Download, FileSpreadsheet, FileText, ChevronLeft, Building2, TrendingUp, Wallet, Calendar, Filter, Zap 
+  Download, FileSpreadsheet, FileText, ChevronLeft, Building2, TrendingUp, Wallet, Calendar, Filter, Zap, LogOut
 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -25,6 +26,7 @@ interface Transaction {
 
 export default function SalesAuditClient({ initialTransactions, branches }: { initialTransactions: Transaction[], branches: string[] }) {
   const router = useRouter();
+  const supabase = createClient();
   const [selectedBranch, setSelectedBranch] = useState<string>("All Branches");
   const [isPending, startTransition] = useTransition();
 
@@ -177,6 +179,13 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
             </button>
           </div>
         </div>
+
+        <button 
+          onClick={() => supabase.auth.signOut()}
+          className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+        >
+          <LogOut size={16} className="text-rose-500" /> SIGN OUT
+        </button>
       </div>
 
       <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-fit">

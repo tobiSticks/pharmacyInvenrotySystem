@@ -62,7 +62,7 @@ export default function AdminSidebar() {
       .subscribe();
 
     return () => {
-      channel.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, []);
 

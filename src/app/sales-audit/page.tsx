@@ -2,6 +2,8 @@ import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import SalesAuditClient from "./SalesAuditClient";
 import { getSalesDataAction } from "../actions";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 
 export default async function SalesAuditPage() {
   const supabase = await createClient();
@@ -14,8 +16,8 @@ export default async function SalesAuditPage() {
   // Fetch branches for filter
   const { data: branches } = await supabase
     .from("branches")
-    .select("name")
-    .order("name");
+    .select("branch_name")
+    .order("branch_name");
 
   // Fetch sales data
   const { transactions, error } = await getSalesDataAction();
@@ -29,9 +31,18 @@ export default async function SalesAuditPage() {
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10 w-full">
+        <Link 
+          href="/" 
+          className="inline-flex items-center gap-2 text-slate-500 hover:text-white transition-colors group mb-8"
+        >
+          <div className="p-2 bg-slate-900 border border-slate-800 rounded-xl group-hover:bg-slate-800 transition-all">
+            <ChevronLeft size={20} />
+          </div>
+          <span className="text-xs font-black uppercase tracking-widest">Back to Dashboard</span>
+        </Link>
         <SalesAuditClient 
           initialTransactions={transactions || []} 
-          branches={branches?.map(b => b.name) || []} 
+          branches={branches?.map(b => b.branch_name) || []} 
         />
       </div>
     </div>
