@@ -268,10 +268,10 @@ export default function AddProductClient() {
                         <td className="px-4 py-3 text-slate-400 font-mono">{row.sku}</td>
                         <td className="px-4 py-3 text-slate-500">{row.category_name}</td>
                         <td className="px-4 py-3 text-slate-500">{row.product_form}</td>
-                        <td className="px-4 py-3 text-emerald-400 font-bold">${row.retail_price}</td>
-                        <td className="px-4 py-3 text-indigo-400 font-bold">${row.wholesale_price}</td>
-                        <td className="px-4 py-3 text-rose-400 font-bold">${row.supermarket_price}</td>
-                        <td className="px-4 py-3 text-purple-400 font-bold">${row.cost_price}</td>
+                        <td className="px-4 py-3 text-emerald-400 font-bold">₦{row.retail_price}</td>
+                        <td className="px-4 py-3 text-indigo-400 font-bold">₦{row.wholesale_price}</td>
+                        <td className="px-4 py-3 text-rose-400 font-bold">₦{row.supermarket_price}</td>
+                        <td className="px-4 py-3 text-purple-400 font-bold">₦{row.cost_price}</td>
                         <td className="px-4 py-3 text-amber-500 font-bold">{row.quantity}</td>
                         <td className="px-4 py-3 text-slate-500">{row.expiry_date}</td>
                         <td className="px-4 py-3 text-slate-500 font-mono">{row.batch_number}</td>
