@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { updateProductPricesAction, deleteProductAction } from "../actions";
+import { updateProductAction, deleteProductAction } from "../actions";
 import { createClient } from "@/utils/supabase/client";
 import { 
   Package, 
@@ -27,12 +27,13 @@ interface CatalogProduct {
   wholesale_price: number;
   retail_price: number;
   supermarket_price: number;
+  quantity: number;
 }
 
 export default function CatalogClient({ initialProducts }: { initialProducts: CatalogProduct[] }) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
-  const [editedPrices, setEditedPrices] = useState<Record<string, { wholesale_price: number, retail_price: number, supermarket_price: number }>>({});
+  const [editedFields, setEditedFields] = useState<Record<string, { wholesale_price: number, retail_price: number, supermarket_price: number, quantity: number }>>({});
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -66,19 +67,25 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
     setCurrentPage(1);
   };
 
-  const handlePriceChange = (id: string, field: 'wholesale_price' | 'retail_price' | 'supermarket_price', value: string) => {
-    const numValue = parseFloat(value) || 0;
+  const handleFieldChange = (id: string, field: 'wholesale_price' | 'retail_price' | 'supermarket_price' | 'quantity', value: string) => {
+    const numValue = field === 'quantity' ? parseInt(value) || 0 : parseFloat(value) || 0;
     const product = products.find(p => p.id === id);
     if (!product) return;
 
-    setEditedPrices(prev => {
-      const currentEdits = prev[id] || { wholesale_price: product.wholesale_price, retail_price: product.retail_price, supermarket_price: product.supermarket_price };
+    setEditedFields(prev => {
+      const currentEdits = prev[id] || { 
+        wholesale_price: product.wholesale_price, 
+        retail_price: product.retail_price, 
+        supermarket_price: product.supermarket_price,
+        quantity: product.quantity || 0
+      };
       const newEdits = { ...currentEdits, [field]: numValue };
       
       // If values match exactly, we can remove the edit state for this product
       if (newEdits.wholesale_price === product.wholesale_price &&
           newEdits.retail_price === product.retail_price &&
-          newEdits.supermarket_price === product.supermarket_price) {
+          newEdits.supermarket_price === product.supermarket_price &&
+          newEdits.quantity === product.quantity) {
         const copy = { ...prev };
         delete copy[id];
         return copy;
@@ -88,16 +95,14 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
     });
   };
 
-  const handleSavePrices = (id: string) => {
-    const edits = editedPrices[id];
+  const handleSave = (id: string) => {
+    const edits = editedFields[id];
     if (!edits) return;
 
     startTransition(async () => {
-      const result = await updateProductPricesAction(null, {
+      const result = await updateProductAction(null, {
         id,
-        wholesale_price: edits.wholesale_price,
-        retail_price: edits.retail_price,
-        supermarket_price: edits.supermarket_price
+        ...edits
       });
 
       if (result.error) {
@@ -106,7 +111,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
         setMessage({ type: 'success', text: result.success as string });
         // Update local state to reflect saved changes
         setProducts(prev => prev.map(p => p.id === id ? { ...p, ...edits } : p));
-        setEditedPrices(prev => {
+        setEditedFields(prev => {
           const copy = { ...prev };
           delete copy[id];
           return copy;
@@ -127,7 +132,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
       } else {
         setMessage({ type: 'success', text: result.success as string });
         setProducts(prev => prev.filter(p => p.id !== productToDelete.id));
-        setEditedPrices(prev => {
+        setEditedFields(prev => {
           const copy = { ...prev };
           delete copy[productToDelete.id];
           return copy;
@@ -211,19 +216,20 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                 <th className="px-6 py-4 text-sm font-semibold text-indigo-400 whitespace-nowrap">Wholesale Price</th>
                 <th className="px-6 py-4 text-sm font-semibold text-emerald-400 whitespace-nowrap">Retail Price</th>
                 <th className="px-6 py-4 text-sm font-semibold text-purple-400 whitespace-nowrap">Supermarket Price</th>
+                <th className="px-6 py-4 text-sm font-semibold text-amber-400 whitespace-nowrap">Stock Quantity</th>
                 <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {displayedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">
                     Catalog is empty. Add a product to get started.
                   </td>
                 </tr>
               ) : (
                 displayedProducts.map((product) => {
-                  const isEdited = !!editedPrices[product.id];
+                  const isEdited = !!editedFields[product.id];
                   return (
                     <tr key={product.id} className="group hover:bg-slate-800/20 transition-colors">
                       <td className="px-6 py-5">
@@ -244,8 +250,8 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                             type="number"
                             min="0"
                             step="0.01"
-                            value={editedPrices[product.id]?.wholesale_price ?? product.wholesale_price}
-                            onChange={(e) => handlePriceChange(product.id, 'wholesale_price', e.target.value)}
+                            value={editedFields[product.id]?.wholesale_price ?? product.wholesale_price}
+                            onChange={(e) => handleFieldChange(product.id, 'wholesale_price', e.target.value)}
                             className={`w-full bg-slate-950 border rounded-lg pl-7 pr-3 py-2 text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium ${isEdited ? 'border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'border-slate-700/50'}`}
                           />
                         </div>
@@ -257,8 +263,8 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                             type="number"
                             min="0"
                             step="0.01"
-                            value={editedPrices[product.id]?.retail_price ?? product.retail_price}
-                            onChange={(e) => handlePriceChange(product.id, 'retail_price', e.target.value)}
+                            value={editedFields[product.id]?.retail_price ?? product.retail_price}
+                            onChange={(e) => handleFieldChange(product.id, 'retail_price', e.target.value)}
                             className={`w-full bg-slate-950 border rounded-lg pl-7 pr-3 py-2 text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all font-medium ${isEdited ? 'border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'border-slate-700/50'}`}
                           />
                         </div>
@@ -270,9 +276,20 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                             type="number"
                             min="0"
                             step="0.01"
-                            value={editedPrices[product.id]?.supermarket_price ?? product.supermarket_price}
-                            onChange={(e) => handlePriceChange(product.id, 'supermarket_price', e.target.value)}
+                            value={editedFields[product.id]?.supermarket_price ?? product.supermarket_price}
+                            onChange={(e) => handleFieldChange(product.id, 'supermarket_price', e.target.value)}
                             className={`w-full bg-slate-950 border rounded-lg pl-7 pr-3 py-2 text-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all font-medium ${isEdited ? 'border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'border-slate-700/50'}`}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="relative w-28">
+                          <input
+                            type="number"
+                            min="0"
+                            value={editedFields[product.id]?.quantity ?? product.quantity}
+                            onChange={(e) => handleFieldChange(product.id, 'quantity', e.target.value)}
+                            className={`w-full bg-slate-950 border rounded-lg px-3 py-2 text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-bold text-center ${isEdited ? 'border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'border-slate-700/50'}`}
                           />
                         </div>
                       </td>
@@ -280,7 +297,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                         <div className="flex items-center gap-2">
                           {isEdited && (
                             <button
-                              onClick={() => handleSavePrices(product.id)}
+                              onClick={() => handleSave(product.id)}
                               disabled={isPending}
                               className="p-2 border border-orange-500/50 bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-white rounded-lg transition-all shadow-[0_0_15px_rgba(249,115,22,0.2)] animate-in zoom-in-90 disabled:opacity-50 flex items-center gap-2 px-4"
                             >

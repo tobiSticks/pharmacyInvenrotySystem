@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import { Users, ShieldCheck, ShoppingCart, UserCog, LogOut, LayoutDashboard, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { usePresence } from "@/context/PresenceContext";
 
 interface PresenceUser {
   user_id: string;
@@ -16,7 +17,7 @@ interface PresenceUser {
 export default function AdminSidebar() {
   const supabase = createClient();
   const pathname = usePathname();
-  const [onlineStaff, setOnlineStaff] = useState<Record<string, PresenceUser>>({});
+  const { onlineStaff } = usePresence();
   
   // Collapse State
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -39,32 +40,6 @@ export default function AdminSidebar() {
       }
     }));
   }, [isCollapsed]);
-
-  useEffect(() => {
-    const channel = supabase.channel("pharmacy-presence");
-
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        const staff: Record<string, PresenceUser> = {};
-        
-        Object.keys(state).forEach((key) => {
-          const presences = state[key] as unknown as PresenceUser[];
-          if (presences && presences.length > 0) {
-            const latest = presences[0];
-            if (["Pharmacist", "Manager", "Cashier"].includes(latest.role)) {
-              staff[latest.role] = latest;
-            }
-          }
-        });
-        setOnlineStaff(staff);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const roles = [
     { name: "Manager", icon: <UserCog size={18} />, color: "text-emerald-400" },

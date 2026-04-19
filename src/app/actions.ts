@@ -288,27 +288,37 @@ export async function batchAddProductsAction(prevState: unknown, products: any[]
   return { success: `${products.length} products added successfully!` };
 }
 
-export async function updateProductPricesAction(prevState: unknown, update: { id: string, wholesale_price: number, retail_price: number, supermarket_price: number }) {
+export async function updateProductAction(prevState: unknown, update: { 
+  id: string, 
+  wholesale_price?: number, 
+  retail_price?: number, 
+  supermarket_price?: number, 
+  quantity?: number 
+}) {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
 
   if (!authData.user) return { error: "Unauthorized." };
 
+  const updateData: any = {};
+  if (update.wholesale_price !== undefined) updateData.wholesale_price = update.wholesale_price;
+  if (update.retail_price !== undefined) updateData.retail_price = update.retail_price;
+  if (update.supermarket_price !== undefined) updateData.supermarket_price = update.supermarket_price;
+  if (update.quantity !== undefined) updateData.quantity = update.quantity;
+
   const { error } = await supabase
     .from("products")
-    .update({
-      wholesale_price: update.wholesale_price,
-      retail_price: update.retail_price,
-      supermarket_price: update.supermarket_price
-    })
+    .update(updateData)
     .eq("id", update.id);
 
   if (error) {
-    return { error: "Failed to update prices: " + error.message };
+    return { error: "Failed to update product: " + error.message };
   }
 
   revalidatePath("/catalog");
-  return { success: "Prices updated successfully." };
+  revalidatePath("/inventory");
+  revalidatePath("/inventory-distribution");
+  return { success: "Product updated successfully." };
 }
 
 export async function deleteProductAction(prevState: unknown, productId: string) {
