@@ -24,7 +24,7 @@ export default async function CatalogPage() {
   // Fetch products
   const { data: products, error } = await supabase
     .from("products")
-    .select("id, name, sku, wholesale_price, retail_price, supermarket_price")
+    .select("id, name, sku, wholesale_price, retail_price, supermarket_price, quantity")
     .eq("organization_id", profile.organization_id)
     .order("name");
 

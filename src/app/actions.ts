@@ -299,6 +299,43 @@ export async function updateProductPricesAction(prevState: unknown, update: { id
   return { success: "Prices updated successfully." };
 }
 
+export async function restockProductAction(prevState: unknown, { productId, quantityToAdd }: { productId: string, quantityToAdd: number }) {
+  if (!productId) return { error: "Product ID is required." };
+  if (quantityToAdd <= 0) return { error: "Quantity must be greater than zero." };
+
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+
+  if (!authData.user) return { error: "Unauthorized." };
+
+  // Fetch current quantity to increment correctly
+  const { data: product, error: fetchError } = await supabase
+    .from("products")
+    .select("quantity")
+    .eq("id", productId)
+    .single();
+
+  if (fetchError || !product) {
+    return { error: "Product not found." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("products")
+    .update({
+      quantity: (product.quantity || 0) + quantityToAdd
+    })
+    .eq("id", productId);
+
+  if (updateError) {
+    return { error: "Restock failed: " + updateError.message };
+  }
+
+  revalidatePath("/catalog");
+  revalidatePath("/inventory");
+  revalidatePath("/inventory-distribution");
+  return { success: `Successfully added ${quantityToAdd} units to stock.` };
+}
+
 export async function deleteProductAction(prevState: unknown, productId: string) {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();

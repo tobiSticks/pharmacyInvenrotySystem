@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
-import { Package, Search } from "lucide-react";
+import React, { useState, useTransition } from "react";
+import { Package, Search, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
+import { restockProductAction } from "../actions";
 
 export default function InventoryListClient({ products }: { products: any[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [restockAmounts, setRestockAmounts] = useState<Record<string, string>>({});
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const itemsPerPage = 15;
   
   const safeProducts = products || [];
@@ -30,6 +34,32 @@ export default function InventoryListClient({ products }: { products: any[] }) {
     setCurrentPage(1); // Reset to first page on search
   };
 
+  const handleRestock = (productId: string) => {
+    const amount = parseInt(restockAmounts[productId] || "0");
+    if (!amount || amount <= 0) return;
+
+    startTransition(async () => {
+      const result = await restockProductAction(null, { productId, quantityToAdd: amount });
+
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error });
+      } else {
+        setMessage({ type: 'success', text: result.success as string });
+        // Local update
+        const product = safeProducts.find(p => p.id === productId);
+        if (product) {
+          product.quantity = (product.quantity || 0) + amount;
+        }
+        setRestockAmounts(prev => {
+          const copy = { ...prev };
+          delete copy[productId];
+          return copy;
+        });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-full max-w-md group focus-within:border-indigo-500/50 transition-all shadow-lg">
@@ -43,6 +73,13 @@ export default function InventoryListClient({ products }: { products: any[] }) {
         />
       </div>
 
+      {message && (
+        <div className={`p-4 border rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-2 duration-300 ${message.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
+          {message.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+          <span className="font-medium">{message.text}</span>
+        </div>
+      )}
+
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
@@ -52,7 +89,8 @@ export default function InventoryListClient({ products }: { products: any[] }) {
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Category</th>
               <th className="px-6 py-4 text-emerald-400 font-bold uppercase tracking-wider min-w-[100px]">Retail</th>
               <th className="px-6 py-4 text-indigo-400 font-bold uppercase tracking-wider min-w-[100px]">Wholesale</th>
-              <th className="px-6 py-4 text-amber-400 font-bold uppercase tracking-wider min-w-[100px]">Stock Qty</th>
+              <th className="px-6 py-4 text-amber-400 font-bold uppercase tracking-wider min-w-[120px]">Stock Qty</th>
+              <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[150px]">Restock</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Exp Date</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Batch #</th>
             </tr>
@@ -89,9 +127,29 @@ export default function InventoryListClient({ products }: { products: any[] }) {
                     ${Number(product.wholesale_price).toFixed(2)}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= product.min_stock_level ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= (product.min_stock_level || 10) ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
                       {product.quantity}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center bg-slate-950 border border-slate-700/50 rounded-lg overflow-hidden focus-within:border-emerald-500/50 transition-all max-w-[120px]">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Add"
+                        value={restockAmounts[product.id] || ""}
+                        onChange={(e) => setRestockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
+                        className="w-full px-2 py-1.5 bg-transparent text-white text-xs focus:outline-none placeholder:text-slate-700"
+                      />
+                      <button
+                        onClick={() => handleRestock(product.id)}
+                        disabled={isPending || !restockAmounts[product.id]}
+                        className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 transition-colors"
+                        title="Add to Stock"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-slate-300">
                     {product.expiry_date ? new Date(product.expiry_date).toLocaleDateString() : '-'}
