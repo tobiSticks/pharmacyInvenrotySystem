@@ -12,7 +12,8 @@ import {
   AlertTriangle,
   AlertCircle,
   CheckCircle2,
-  X
+  X,
+  Search
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,15 +37,30 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
   // Delete Modal State
   const [productToDelete, setProductToDelete] = useState<CatalogProduct | null>(null);
 
-  // Pagination
+  // Search & Pagination
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
-  const totalPages = Math.ceil(products.length / itemsPerPage);
+
+  const filteredProducts = products.filter(product => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      product.name?.toLowerCase().includes(searchLower) ||
+      product.sku?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
   
-  const displayedProducts = products.slice(
+  const displayedProducts = filteredProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
 
   const handlePriceChange = (id: string, field: 'wholesale_price' | 'retail_price' | 'supermarket_price', value: string) => {
     const numValue = parseFloat(value) || 0;
@@ -155,6 +171,17 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
         </Link>
       </div>
 
+      <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-full max-w-md group focus-within:border-indigo-500/50 transition-all shadow-lg">
+        <Search size={18} className="text-slate-500 group-focus-within:text-indigo-400" />
+        <input 
+          type="text"
+          placeholder="Search items by name or SKU..."
+          value={searchTerm}
+          onChange={handleSearchChange}
+          className="bg-transparent border-none outline-none text-slate-200 text-sm w-full placeholder-slate-500"
+        />
+      </div>
+
       {message && (
         <div className={`p-4 border rounded-2xl flex items-center gap-3 ${message.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
           {message.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
@@ -199,7 +226,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                       </td>
                       <td className="px-6 py-5">
                         <div className="relative w-32">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">₦</span>
                           <input
                             type="number"
                             min="0"
@@ -212,7 +239,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                       </td>
                       <td className="px-6 py-5">
                         <div className="relative w-32">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">₦</span>
                           <input
                             type="number"
                             min="0"
@@ -225,7 +252,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                       </td>
                       <td className="px-6 py-5">
                         <div className="relative w-32">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">₦</span>
                           <input
                             type="number"
                             min="0"
@@ -268,12 +295,12 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
         <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/30 gap-4">
           <div className="text-sm text-slate-500">
             Showing <span className="text-slate-300 font-medium">
-              {Math.min((currentPage - 1) * itemsPerPage + 1, products.length || 0)}
+              {Math.min((currentPage - 1) * itemsPerPage + 1, filteredProducts.length || 0)}
             </span> to <span className="text-slate-300 font-medium">
-              {Math.min(currentPage * itemsPerPage, products.length)}
+              {Math.min(currentPage * itemsPerPage, filteredProducts.length)}
             </span> of <span className="text-slate-300 font-medium">
-              {products.length}
-            </span> products
+              {filteredProducts.length}
+            </span> products {searchTerm && <span className="text-indigo-400 font-medium">(filtered)</span>}
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -1,13 +1,28 @@
 "use client";
 
-import React, { useActionState, useEffect, useRef } from "react";
-import { Plus, Building2, UserPlus, KeyRound, Mail, Shield, CheckCircle2, MapPin, AlertCircle, PackagePlus, Truck, BarChart3, Tag } from "lucide-react";
+import React, { useActionState, useEffect, useRef, useState } from "react";
+import { Plus, Building2, UserPlus, KeyRound, Mail, Shield, CheckCircle2, MapPin, AlertCircle, PackagePlus, Truck, BarChart3, Tag, TrendingUp } from "lucide-react";
 import { addBranchAction, createStaffAction } from "./actions";
 import Link from "next/link";
+import AdminSidebar from "@/components/AdminSidebar";
 
 export default function AdminDashboardClient({ branches }: { branches: string[] }) {
   const [branchState, addBranch, isAddingBranch] = useActionState(addBranchAction, undefined);
   const [staffState, createStaff, isCreatingStaff] = useActionState(createStaffAction, undefined);
+
+  // Layout Sync State
+  const [sidebarLayout, setSidebarLayout] = useState({ width: 288 });
+
+  useEffect(() => {
+    const handleSidebarChange = (e: any) => {
+      setSidebarLayout({
+        width: e.detail.width,
+      });
+    };
+
+    window.addEventListener("sidebar-state-change", handleSidebarChange);
+    return () => window.removeEventListener("sidebar-state-change", handleSidebarChange);
+  }, []);
 
   const branchFormRef = useRef<HTMLFormElement>(null);
   const staffFormRef = useRef<HTMLFormElement>(null);
@@ -25,14 +40,20 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
   }, [staffState]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex relative overflow-hidden">
+      <AdminSidebar />
+      
       {/* Background Effects */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+      <div 
+        className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none transition-all duration-300 ease-in-out"
+        style={{ paddingLeft: sidebarLayout.width }}
+      >
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-indigo-600/20 blur-[120px]" />
         <div className="absolute top-[60%] -right-[10%] w-[40%] h-[40%] rounded-full bg-emerald-500/10 blur-[100px]" />
       </div>
 
-      <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
+      <main className="flex-1 h-screen overflow-y-auto pt-12 pb-24 px-4 sm:px-12 relative z-10 custom-scrollbar transition-all duration-300 ease-in-out">
+        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Header Section */}
         <div className="lg:col-span-12 mb-4">
@@ -59,7 +80,21 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
             </Link>
 
             <Link 
+              href="/sales-audit" 
+              className="flex items-center gap-3 bg-slate-900/80 hover:bg-blue-600/20 border border-slate-800 hover:border-blue-500/50 px-6 py-4 rounded-2xl transition-all group"
+            >
+              <div className="p-2 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 text-blue-400">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <div className="text-white font-bold text-sm">Sales Audit</div>
+                <div className="text-slate-500 text-xs translate-y-[-1px]">Live feed & reporting</div>
+              </div>
+            </Link>
+
+            <Link 
               href="/inventory/add" 
+
               className="flex items-center gap-3 bg-slate-900/80 hover:bg-indigo-600/20 border border-slate-800 hover:border-indigo-500/50 px-6 py-4 rounded-2xl transition-all group"
             >
               <div className="p-2 bg-indigo-500/10 rounded-lg group-hover:bg-indigo-500/20 text-indigo-400">
@@ -282,6 +317,7 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
           </div>
         </div>
       </div>
-    </div>
-  );
+    </main>
+  </div>
+);
 }

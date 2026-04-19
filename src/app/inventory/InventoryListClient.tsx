@@ -1,21 +1,49 @@
 "use client";
 
 import React, { useState } from "react";
-import { Package } from "lucide-react";
+import { Package, Search } from "lucide-react";
 
 export default function InventoryListClient({ products }: { products: any[] }) {
+  const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
   
   const safeProducts = products || [];
-  const totalPages = Math.ceil(safeProducts.length / itemsPerPage);
-  const displayedProducts = safeProducts.slice(
+
+  const filteredProducts = safeProducts.filter(product => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      product.name?.toLowerCase().includes(searchLower) ||
+      product.sku?.toLowerCase().includes(searchLower) ||
+      product.category_name?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const displayedProducts = filteredProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1); // Reset to first page on search
+  };
+
   return (
-    <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-full max-w-md group focus-within:border-indigo-500/50 transition-all shadow-lg">
+        <Search size={18} className="text-slate-500 group-focus-within:text-indigo-400" />
+        <input 
+          type="text"
+          placeholder="Search items by name, SKU or category..."
+          value={searchTerm}
+          onChange={handleSearchChange}
+          className="bg-transparent border-none outline-none text-slate-200 text-sm w-full placeholder-slate-500"
+        />
+      </div>
+
+      <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
           <thead className="bg-slate-950/50 sticky top-0 backdrop-blur-md">
@@ -81,12 +109,12 @@ export default function InventoryListClient({ products }: { products: any[] }) {
       <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/30 gap-4">
         <div className="text-sm text-slate-500">
           Showing <span className="text-slate-300 font-medium">
-            {Math.min((currentPage - 1) * itemsPerPage + 1, safeProducts.length || 0)}
+            {Math.min((currentPage - 1) * itemsPerPage + 1, filteredProducts.length || 0)}
           </span> to <span className="text-slate-300 font-medium">
-            {Math.min(currentPage * itemsPerPage, safeProducts.length)}
+            {Math.min(currentPage * itemsPerPage, filteredProducts.length)}
           </span> of <span className="text-slate-300 font-medium">
-            {safeProducts.length}
-          </span> products
+            {filteredProducts.length}
+          </span> products {searchTerm && <span className="text-indigo-400 font-medium">(filtered)</span>}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -110,6 +138,7 @@ export default function InventoryListClient({ products }: { products: any[] }) {
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 }

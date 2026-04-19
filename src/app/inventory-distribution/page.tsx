@@ -23,26 +23,19 @@ export default async function InventoryDistributionPage() {
     return <div>Profile setup incomplete.</div>;
   }
 
-  // Fetch products and their balances
-  const { data: products, error } = await supabase
+  // Fetch products
+  const { data: products } = await supabase
     .from("products")
-    .select(`
-      id,
-      name,
-      sku,
-      quantity,
-      product_balances (
-        wholesale_qty,
-        retail_qty,
-        supermarket_qty
-      )
-    `)
+    .select("id, name, sku, quantity")
     .eq("organization_id", profile.organization_id)
     .order("name");
 
-  if (error) {
-    console.error("Error fetching inventory:", error);
-  }
+  // Fetch branches created by this admin OR in their organization
+  const { data: branches } = await supabase
+    .from("branches")
+    .select("*")
+    .or(`admin_id.eq.${authData.user.id}${profile?.organization_id ? `,organization_id.eq.${profile.organization_id}` : ''}`)
+    .order("name");
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-8 sm:p-12 relative overflow-hidden">
@@ -61,11 +54,11 @@ export default async function InventoryDistributionPage() {
             Inventory Distribution
           </h1>
           <p className="mt-2 text-slate-400 text-lg">
-            Allocate stock from the main warehouse to your specific pharmacy channels.
+            Allocate stock from the main warehouse to your specific pharmacy locations.
           </p>
         </header>
 
-        <DistributionClient initialProducts={products || []} />
+        <DistributionClient initialProducts={products || []} branches={branches || []} />
       </div>
     </div>
   );
