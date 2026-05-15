@@ -111,6 +111,17 @@ export default function RetailPOSClient({ initialProducts, branchName, branchId,
       return;
     }
 
+    for (const item of cart) {
+      const product = initialProducts.find((p: any) => p.id === item.id);
+      const stock = product?.retail_qty || 0;
+      const requested = item.quantity;
+      
+      if (requested > stock) {
+        alert(`Cannot checkout: Insufficient retail stock for ${item.name}. (Available: ${stock}, Requested: ${requested})`);
+        return;
+      }
+    }
+
     startTransition(async () => {
       const result = await createRetailTransactionAction(null, {
         branchId,

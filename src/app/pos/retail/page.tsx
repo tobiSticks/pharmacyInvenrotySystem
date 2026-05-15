@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllRows } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import RetailPOSClient from "./RetailPOSClient";
 
@@ -52,22 +53,26 @@ export default async function RetailPOSPage() {
 
   // Fetch inventory specifically for this branch from product_balances
   // We join with products to get the names and prices
-  const { data: inventory, error: invError } = await supabase
-    .from("product_balances")
-    .select(`
-      retail_qty,
-      products (
-        id,
-        name,
-        sku,
-        retail_price,
-        category_name,
-        product_form
-      )
-    `)
-    .eq("branch_id", branch.id);
-
-  if (invError) {
+  let inventory: any[] = [];
+  try {
+    inventory = await fetchAllRows(
+      supabase,
+      "product_balances",
+      `
+        retail_qty,
+        products (
+          id,
+          name,
+          sku,
+          retail_price,
+          category_name,
+          product_form
+        )
+      `,
+      "branch_id",
+      branch.id
+    );
+  } catch (invError) {
     console.error("Inventory Fetch Error:", invError);
   }
 

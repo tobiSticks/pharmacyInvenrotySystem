@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import WholesalePOSClient from "./WholesalePOSClient";
 
@@ -55,13 +56,16 @@ export default async function WholesalePOSPage() {
   }
 
   // Fetch products and their balances for this specific branch
-  const { data: products } = await supabase
-    .from("products")
-    .select(`
-      *,
-      product_balances (*)
-    `)
-    .eq("organization_id", profile.organization_id);
+  let products: any[] = [];
+  try {
+    products = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      "*, product_balances (*)"
+    );
+  } catch (error) {
+    console.error("Error fetching products:", error);
+  }
 
   // Filter products that have a balance record for this branch
   const branchProducts = (products || []).map(p => ({

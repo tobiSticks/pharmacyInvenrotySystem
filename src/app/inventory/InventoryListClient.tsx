@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Package, Search, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
-import { restockProductAction } from "../actions";
-import React, { useState } from "react";
-import { Package, Search, LogOut } from "lucide-react";
+import { Package, Search, Plus, AlertCircle, CheckCircle2, LogOut, Edit2, Check, X } from "lucide-react";
+import { restockProductAction, updateProductAction } from "../actions";
 import { createClient } from "@/utils/supabase/client";
 
 export default function InventoryListClient({ products }: { products: any[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [restockAmounts, setRestockAmounts] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedQuantity, setEditedQuantity] = useState<string>("");
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const itemsPerPage = 15;
@@ -64,6 +64,37 @@ export default function InventoryListClient({ products }: { products: any[] }) {
     });
   };
 
+  const startEditing = (product: any) => {
+    setEditingId(product.id);
+    setEditedQuantity(product.quantity.toString());
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditedQuantity("");
+  };
+
+  const saveQuantity = (productId: string) => {
+    const quantity = parseInt(editedQuantity);
+    if (isNaN(quantity) || quantity < 0) {
+      setMessage({ type: 'error', text: "Invalid quantity value." });
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await updateProductAction(null, { id: productId, quantity });
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error });
+      } else {
+        setMessage({ type: 'success', text: "Quantity updated successfully." });
+        setEditingId(null);
+        const p = safeProducts.find(prod => prod.id === productId);
+        if (p) p.quantity = quantity;
+        setTimeout(() => setMessage(null), 3000);
+      }
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end mb-2">
@@ -103,7 +134,7 @@ export default function InventoryListClient({ products }: { products: any[] }) {
               <th className="px-6 py-4 text-emerald-400 font-bold uppercase tracking-wider min-w-[100px]">Retail</th>
               <th className="px-6 py-4 text-indigo-400 font-bold uppercase tracking-wider min-w-[100px]">Wholesale</th>
               <th className="px-6 py-4 text-amber-400 font-bold uppercase tracking-wider min-w-[120px]">Stock Qty</th>
-              <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[150px]">Restock</th>
+              <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[150px]">Restock / Edit</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Exp Date</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Batch #</th>
             </tr>
@@ -140,30 +171,71 @@ export default function InventoryListClient({ products }: { products: any[] }) {
                     ₦{Number(product.wholesale_price).toFixed(2)}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= (product.min_stock_level || 10) ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
-                      {product.quantity}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center bg-slate-950 border border-slate-700/50 rounded-lg overflow-hidden focus-within:border-emerald-500/50 transition-all max-w-[120px]">
+                    {editingId === product.id ? (
                       <input
                         type="number"
-                        min="1"
-                        placeholder="Add"
-                        value={restockAmounts[product.id] || ""}
-                        onChange={(e) => setRestockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
-                        className="w-full px-2 py-1.5 bg-transparent text-white text-xs focus:outline-none placeholder:text-slate-700"
+                        min="0"
+                        value={editedQuantity}
+                        onChange={(e) => setEditedQuantity(e.target.value)}
+                        className="w-20 bg-slate-950 border border-amber-500/50 rounded px-2 py-1 text-white text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                        autoFocus
                       />
-                      <button
-                        onClick={() => handleRestock(product.id)}
-                        disabled={isPending || !restockAmounts[product.id]}
-                        className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 transition-colors"
-                        title="Add to Stock"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
+                    ) : (
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= (product.min_stock_level || 10) ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
+                        {product.quantity}
+                      </span>
+                    )}
                   </td>
+                  <td className="px-6 py-4">
+                    {editingId === product.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => saveQuantity(product.id)}
+                          disabled={isPending}
+                          className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors disabled:opacity-50"
+                          title="Save"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-md transition-colors"
+                          title="Cancel"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center bg-slate-950 border border-slate-700/50 rounded-lg overflow-hidden focus-within:border-emerald-500/50 transition-all max-w-[120px]">
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Add"
+                            value={restockAmounts[product.id] || ""}
+                            onChange={(e) => setRestockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            className="w-16 px-2 py-1.5 bg-transparent text-white text-xs focus:outline-none placeholder:text-slate-700"
+                          />
+                          <button
+                            onClick={() => handleRestock(product.id)}
+                            disabled={isPending || !restockAmounts[product.id]}
+                            className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 transition-colors"
+                            title="Add to Stock"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => startEditing(product)}
+                          className="p-1.5 hover:bg-slate-800 text-slate-500 hover:text-indigo-400 rounded-md transition-all flex items-center justify-center gap-1.5 text-xs font-bold group"
+                          title="Edit Stock Quantity"
+                        >
+                          <Edit2 size={14} className="group-hover:scale-110 transition-transform" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+
                   <td className="px-6 py-4 text-slate-300">
                     {product.expiry_date ? new Date(product.expiry_date).toLocaleDateString() : '-'}
                   </td>

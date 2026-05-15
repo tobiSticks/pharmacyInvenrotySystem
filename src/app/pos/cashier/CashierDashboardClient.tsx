@@ -112,6 +112,17 @@ export default function CashierDashboardClient({
   const cartTotal = cart.reduce((acc, item) => acc + (item.supermarket_price * item.quantity), 0);
 
   const handleCheckout = () => {
+    for (const item of cart) {
+      const product = initialProducts.find((p: any) => p.id === item.id);
+      const stock = product?.supermarket_qty || 0;
+      const requested = item.quantity;
+      
+      if (requested > stock) {
+        alert(`Cannot checkout: Insufficient supermarket stock for ${item.name}. (Available: ${stock}, Requested: ${requested})`);
+        return;
+      }
+    }
+
     startTransition(async () => {
       const result = await createSupermarketTransactionAction(null, {
         branchId,

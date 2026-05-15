@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import DistributionClient from "./DistributionClient";
 import Link from "next/link";
@@ -24,11 +25,16 @@ export default async function InventoryDistributionPage() {
   }
 
   // Fetch products
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, name, sku, quantity")
-    .eq("organization_id", profile.organization_id)
-    .order("name");
+  let products: any[] = [];
+  try {
+    products = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      "id, name, sku, quantity"
+    );
+  } catch (error) {
+    console.error("Error fetching products:", error);
+  }
 
   // Fetch branches created by this admin OR in their organization
   const { data: branches } = await supabase

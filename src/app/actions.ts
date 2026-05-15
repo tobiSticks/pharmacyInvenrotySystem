@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -197,35 +198,26 @@ export async function getInventoryAction(branchId?: string) {
 
   if (!profile?.organization_id) return [];
 
-  let query = supabase
-    .from("products")
-    .select(`
-      *,
-      product_balances (
-        wholesale_qty,
-        retail_qty,
-        supermarket_qty,
-        branch_id
-      )
-    `)
-    .eq("organization_id", profile.organization_id);
+  try {
+    const data = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      `*, product_balances ( wholesale_qty, retail_qty, supermarket_qty, branch_id )`
+    );
 
-  const { data, error } = await query;
+    // If a branchId is provided, filter the balances for that branch specifically
+    if (branchId) {
+      return (data || []).map(product => ({
+        ...product,
+        product_balances: product.product_balances?.find((pb: any) => pb.branch_id === branchId) || null
+      }));
+    }
 
-  if (error) {
+    return data || [];
+  } catch (error) {
     console.error("Error fetching inventory:", error);
     return [];
   }
-
-  // If a branchId is provided, filter the balances for that branch specifically
-  if (branchId) {
-    return (data || []).map(product => ({
-      ...product,
-      product_balances: product.product_balances?.find((pb: any) => pb.branch_id === branchId) || null
-    }));
-  }
-
-  return data || [];
 }
 
 export async function distributeInventoryAction(prevState: unknown, { updates, branchId }: { updates: any[], branchId: string }) {
@@ -288,27 +280,37 @@ export async function batchAddProductsAction(prevState: unknown, products: any[]
   return { success: `${products.length} products added successfully!` };
 }
 
-export async function updateProductPricesAction(prevState: unknown, update: { id: string, wholesale_price: number, retail_price: number, supermarket_price: number }) {
+export async function updateProductAction(prevState: unknown, update: { 
+  id: string, 
+  wholesale_price?: number, 
+  retail_price?: number, 
+  supermarket_price?: number, 
+  quantity?: number 
+}) {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
 
   if (!authData.user) return { error: "Unauthorized." };
 
+  const updateData: any = {};
+  if (update.wholesale_price !== undefined) updateData.wholesale_price = update.wholesale_price;
+  if (update.retail_price !== undefined) updateData.retail_price = update.retail_price;
+  if (update.supermarket_price !== undefined) updateData.supermarket_price = update.supermarket_price;
+  if (update.quantity !== undefined) updateData.quantity = update.quantity;
+
   const { error } = await supabase
     .from("products")
-    .update({
-      wholesale_price: update.wholesale_price,
-      retail_price: update.retail_price,
-      supermarket_price: update.supermarket_price
-    })
+    .update(updateData)
     .eq("id", update.id);
 
   if (error) {
-    return { error: "Failed to update prices: " + error.message };
+    return { error: "Failed to update product: " + error.message };
   }
 
   revalidatePath("/catalog");
-  return { success: "Prices updated successfully." };
+  revalidatePath("/inventory");
+  revalidatePath("/inventory-distribution");
+  return { success: "Product updated successfully." };
 }
 
 export async function restockProductAction(prevState: unknown, { productId, quantityToAdd }: { productId: string, quantityToAdd: number }) {

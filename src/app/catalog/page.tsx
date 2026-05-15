@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import CatalogClient from "./CatalogClient";
 import Link from "next/link";
@@ -24,13 +25,14 @@ export default async function CatalogPage() {
   }
 
   // Fetch products
-  const { data: products, error } = await supabase
-    .from("products")
-    .select("id, name, sku, wholesale_price, retail_price, supermarket_price, quantity")
-    .eq("organization_id", profile.organization_id)
-    .order("name");
-
-  if (error) {
+  let products: any[] = [];
+  try {
+    products = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      "id, name, sku, wholesale_price, retail_price, supermarket_price, quantity"
+    );
+  } catch (error) {
     console.error("Error fetching catalog:", error);
   }
 
