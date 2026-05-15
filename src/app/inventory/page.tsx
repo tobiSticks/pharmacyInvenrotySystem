@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, PackageSearch } from "lucide-react";
@@ -24,13 +25,14 @@ export default async function InventoryListPage() {
   }
 
   // Fetch products
-  const { data: products, error } = await supabase
-    .from("products")
-    .select("*")
-    .eq("organization_id", profile.organization_id)
-    .order("name");
-
-  if (error) {
+  let products: any[] = [];
+  try {
+    products = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      "*"
+    );
+  } catch (error) {
     console.error("Error fetching inventory list:", error);
   }
 

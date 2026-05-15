@@ -133,6 +133,17 @@ export default function WholesalePOSClient({ initialProducts, branchName, branch
       return;
     }
 
+    for (const item of cart) {
+      const product = initialProducts.find((p: any) => p.id === item.id);
+      const stock = product?.branch_stock?.wholesale_qty || 0;
+      const requested = item.quantity * item.packMultiplier;
+      
+      if (requested > stock) {
+        alert(`Cannot checkout: Insufficient wholesale stock for ${item.name}. (Available: ${stock}, Requested: ${requested})`);
+        return;
+      }
+    }
+
     startTransition(async () => {
       const result = await createWholesaleTransactionAction({
         branchId,

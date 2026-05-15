@@ -2,6 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -197,35 +198,26 @@ export async function getInventoryAction(branchId?: string) {
 
   if (!profile?.organization_id) return [];
 
-  let query = supabase
-    .from("products")
-    .select(`
-      *,
-      product_balances (
-        wholesale_qty,
-        retail_qty,
-        supermarket_qty,
-        branch_id
-      )
-    `)
-    .eq("organization_id", profile.organization_id);
+  try {
+    const data = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      `*, product_balances ( wholesale_qty, retail_qty, supermarket_qty, branch_id )`
+    );
 
-  const { data, error } = await query;
+    // If a branchId is provided, filter the balances for that branch specifically
+    if (branchId) {
+      return (data || []).map(product => ({
+        ...product,
+        product_balances: product.product_balances?.find((pb: any) => pb.branch_id === branchId) || null
+      }));
+    }
 
-  if (error) {
+    return data || [];
+  } catch (error) {
     console.error("Error fetching inventory:", error);
     return [];
   }
-
-  // If a branchId is provided, filter the balances for that branch specifically
-  if (branchId) {
-    return (data || []).map(product => ({
-      ...product,
-      product_balances: product.product_balances?.find((pb: any) => pb.branch_id === branchId) || null
-    }));
-  }
-
-  return data || [];
 }
 
 export async function distributeInventoryAction(prevState: unknown, { updates, branchId }: { updates: any[], branchId: string }) {

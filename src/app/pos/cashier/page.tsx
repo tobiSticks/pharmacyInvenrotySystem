@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { fetchAllRows } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import CashierDashboardClient from "./CashierDashboardClient";
 
@@ -37,20 +38,28 @@ export default async function CashierPOSPage() {
   const supabaseAdmin = createAdminClient();
 
   // 1. Fetch Supermarket Inventory
-  const { data: inventory } = await supabase
-    .from("product_balances")
-    .select(`
-      supermarket_qty,
-      products (
-        id,
-        name,
-        sku,
-        supermarket_price,
-        category_name,
-        product_form
-      )
-    `)
-    .eq("branch_id", branch.id);
+  let inventory: any[] = [];
+  try {
+    inventory = await fetchAllRows(
+      supabase,
+      "product_balances",
+      `
+        supermarket_qty,
+        products (
+          id,
+          name,
+          sku,
+          supermarket_price,
+          category_name,
+          product_form
+        )
+      `,
+      "branch_id",
+      branch.id
+    );
+  } catch (error) {
+    console.error("Inventory Fetch Error:", error);
+  }
 
   const products = inventory?.map(item => ({
     ...(item.products as any),
