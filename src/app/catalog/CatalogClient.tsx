@@ -36,6 +36,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
   const [editedFields, setEditedFields] = useState<Record<string, { wholesale_price: number, retail_price: number, supermarket_price: number, quantity: number }>>({});
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [restockAmounts, setRestockAmounts] = useState<Record<string, string>>({});
 
   // Delete Modal State
   const [productToDelete, setProductToDelete] = useState<CatalogProduct | null>(null);
@@ -114,6 +115,28 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
         setEditedFields(prev => {
           const copy = { ...prev };
           delete copy[id];
+          return copy;
+        });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    });
+  };
+
+  const handleRestock = (productId: string) => {
+    const amount = parseInt(restockAmounts[productId] || "0");
+    if (!amount || amount <= 0) return;
+
+    startTransition(async () => {
+      const result = await restockProductAction(null, { productId, quantityToAdd: amount });
+
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error });
+      } else {
+        setMessage({ type: 'success', text: result.success as string });
+        setProducts(prev => prev.map(p => p.id === productId ? { ...p, quantity: (p.quantity || 0) + amount } : p));
+        setRestockAmounts(prev => {
+          const copy = { ...prev };
+          delete copy[productId];
           return copy;
         });
         setTimeout(() => setMessage(null), 3000);
@@ -216,7 +239,7 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                 <th className="px-6 py-4 text-sm font-semibold text-indigo-400 whitespace-nowrap">Wholesale Price</th>
                 <th className="px-6 py-4 text-sm font-semibold text-emerald-400 whitespace-nowrap">Retail Price</th>
                 <th className="px-6 py-4 text-sm font-semibold text-purple-400 whitespace-nowrap">Supermarket Price</th>
-                <th className="px-6 py-4 text-sm font-semibold text-amber-400 whitespace-nowrap">Stock Quantity</th>
+                <th className="px-6 py-4 text-sm font-semibold text-amber-400 whitespace-nowrap">Warehouse Stock</th>
                 <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
@@ -283,14 +306,28 @@ export default function CatalogClient({ initialProducts }: { initialProducts: Ca
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <div className="relative w-28">
-                          <input
-                            type="number"
-                            min="0"
-                            value={editedFields[product.id]?.quantity ?? product.quantity}
-                            onChange={(e) => handleFieldChange(product.id, 'quantity', e.target.value)}
-                            className={`w-full bg-slate-950 border rounded-lg px-3 py-2 text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-bold text-center ${isEdited ? 'border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.1)]' : 'border-slate-700/50'}`}
-                          />
+                        <div className="flex items-center gap-3">
+                          <div className="w-16 text-center font-bold text-amber-500 bg-amber-500/10 rounded-lg py-2 border border-amber-500/20">
+                            {product.quantity || 0}
+                          </div>
+                          <div className="flex items-center bg-slate-950 border border-slate-700/50 rounded-lg overflow-hidden group-focus-within:border-amber-500/50 transition-all">
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder="Add"
+                              value={restockAmounts[product.id] || ""}
+                              onChange={(e) => setRestockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
+                              className="w-16 px-2 py-2 bg-transparent text-white text-xs focus:outline-none placeholder:text-slate-700"
+                            />
+                            <button
+                              onClick={() => handleRestock(product.id)}
+                              disabled={isPending || !restockAmounts[product.id]}
+                              className="p-2 bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-30 transition-colors"
+                              title="Restock"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">

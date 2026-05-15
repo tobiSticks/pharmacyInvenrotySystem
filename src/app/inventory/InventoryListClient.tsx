@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Package, Search, Edit2, Check, X, AlertCircle, CheckCircle2, LogOut } from "lucide-react";
-import { updateProductAction } from "../actions";
+import { Package, Search, Plus, AlertCircle, CheckCircle2, LogOut, Edit2, Check, X } from "lucide-react";
+import { restockProductAction, updateProductAction } from "../actions";
 import { createClient } from "@/utils/supabase/client";
 
 export default function InventoryListClient({ products }: { products: any[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [restockAmounts, setRestockAmounts] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedQuantity, setEditedQuantity] = useState<string>("");
   const [isPending, startTransition] = useTransition();
@@ -37,6 +38,32 @@ export default function InventoryListClient({ products }: { products: any[] }) {
     setCurrentPage(1); // Reset to first page on search
   };
 
+  const handleRestock = (productId: string) => {
+    const amount = parseInt(restockAmounts[productId] || "0");
+    if (!amount || amount <= 0) return;
+
+    startTransition(async () => {
+      const result = await restockProductAction(null, { productId, quantityToAdd: amount });
+
+      if (result.error) {
+        setMessage({ type: 'error', text: result.error });
+      } else {
+        setMessage({ type: 'success', text: result.success as string });
+        // Local update
+        const product = safeProducts.find(p => p.id === productId);
+        if (product) {
+          product.quantity = (product.quantity || 0) + amount;
+        }
+        setRestockAmounts(prev => {
+          const copy = { ...prev };
+          delete copy[productId];
+          return copy;
+        });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    });
+  };
+
   const startEditing = (product: any) => {
     setEditingId(product.id);
     setEditedQuantity(product.quantity.toString());
@@ -61,13 +88,8 @@ export default function InventoryListClient({ products }: { products: any[] }) {
       } else {
         setMessage({ type: 'success', text: "Quantity updated successfully." });
         setEditingId(null);
-        // We rely on router.refresh() if called in action, or local update
-        // Since we are using revalidatePath in the action, 
-        // the server component will re-fetch data if we force a refresh or just wait.
-        // For better UX, let's update locally if safe.
         const p = safeProducts.find(prod => prod.id === productId);
         if (p) p.quantity = quantity;
-        
         setTimeout(() => setMessage(null), 3000);
       }
     });
@@ -112,7 +134,7 @@ export default function InventoryListClient({ products }: { products: any[] }) {
               <th className="px-6 py-4 text-emerald-400 font-bold uppercase tracking-wider min-w-[100px]">Retail</th>
               <th className="px-6 py-4 text-indigo-400 font-bold uppercase tracking-wider min-w-[100px]">Wholesale</th>
               <th className="px-6 py-4 text-amber-400 font-bold uppercase tracking-wider min-w-[120px]">Stock Qty</th>
-              <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Restock / Edit</th>
+              <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[150px]">Restock / Edit</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Exp Date</th>
               <th className="px-6 py-4 text-slate-400 font-bold uppercase tracking-wider min-w-[120px]">Batch #</th>
             </tr>
@@ -159,7 +181,7 @@ export default function InventoryListClient({ products }: { products: any[] }) {
                         autoFocus
                       />
                     ) : (
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= product.min_stock_level ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${product.quantity <= (product.min_stock_level || 10) ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-500 border-amber-500/30'}`}>
                         {product.quantity}
                       </span>
                     )}
@@ -184,15 +206,36 @@ export default function InventoryListClient({ products }: { products: any[] }) {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => startEditing(product)}
-                        className="p-1.5 hover:bg-slate-800 text-slate-500 hover:text-indigo-400 rounded-md transition-all flex items-center gap-1.5 text-xs font-bold group"
-                      >
-                        <Edit2 size={14} className="group-hover:scale-110 transition-transform" />
-                        Quick Edit
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center bg-slate-950 border border-slate-700/50 rounded-lg overflow-hidden focus-within:border-emerald-500/50 transition-all max-w-[120px]">
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Add"
+                            value={restockAmounts[product.id] || ""}
+                            onChange={(e) => setRestockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            className="w-16 px-2 py-1.5 bg-transparent text-white text-xs focus:outline-none placeholder:text-slate-700"
+                          />
+                          <button
+                            onClick={() => handleRestock(product.id)}
+                            disabled={isPending || !restockAmounts[product.id]}
+                            className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 transition-colors"
+                            title="Add to Stock"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => startEditing(product)}
+                          className="p-1.5 hover:bg-slate-800 text-slate-500 hover:text-indigo-400 rounded-md transition-all flex items-center justify-center gap-1.5 text-xs font-bold group"
+                          title="Edit Stock Quantity"
+                        >
+                          <Edit2 size={14} className="group-hover:scale-110 transition-transform" />
+                        </button>
+                      </div>
                     )}
                   </td>
+
                   <td className="px-6 py-4 text-slate-300">
                     {product.expiry_date ? new Date(product.expiry_date).toLocaleDateString() : '-'}
                   </td>
