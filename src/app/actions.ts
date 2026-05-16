@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
-import { fetchAllProducts } from "@/utils/supabase/queries";
+import { fetchAllProducts, fetchAllRows } from "@/utils/supabase/queries";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -387,22 +387,27 @@ export async function getSalesDataAction() {
     return { error: "Profile setup incomplete." };
   }
 
-  // Fetch transactions
-  const { data: transactions, error } = await supabase
-    .from("transactions")
-    .select(`
-      *,
-      transaction_items (*)
-    `)
-    .eq("organization_id", profile.organization_id)
-    .order("created_at", { ascending: false });
+  // Fetch transactions using Admin Client and fetchAllRows to bypass RLS and row limits
+  const supabaseAdmin = createAdminClient();
+  try {
+    const transactions = await fetchAllRows(
+      supabaseAdmin,
+      "transactions",
+      "*, transaction_items (*)",
+      "organization_id",
+      profile.organization_id
+    );
 
-  if (error) {
+    // Re-order locally since fetchAllRows might not preserve order if multiple pages
+    const sortedTransactions = (transactions || []).sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return { success: true, transactions: sortedTransactions };
+  } catch (error) {
     console.error("Error fetching sales data:", error);
     return { error: "Failed to fetch sales data." };
   }
-
-  return { success: true, transactions: transactions || [] };
 }
 
 // Helper to quickly populate test data (since it's a new table)
@@ -482,6 +487,7 @@ export async function createWholesaleTransactionAction(data: {
       buyer_name: data.buyerName,
       cashier_id: authData.user.id,
       cashier_name: data.sellerName, // Matches schema field
+      type: 'wholesale' // Discriminator for reports
     })
     .select("id")
     .single();
