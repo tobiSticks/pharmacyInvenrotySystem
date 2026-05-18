@@ -404,9 +404,9 @@ export async function getSalesDataAction() {
     );
 
     return { success: true, transactions: sortedTransactions };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching sales data:", error);
-    return { error: "Failed to fetch sales data." };
+    return { error: error?.message || error?.toString() || "Failed to fetch sales data." };
   }
 }
 
