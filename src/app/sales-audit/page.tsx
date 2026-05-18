@@ -13,10 +13,18 @@ export default async function SalesAuditPage() {
     redirect("/login");
   }
 
+  // Fetch admin profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", authData.user.id)
+    .single();
+
   // Fetch branches for filter
   const { data: branches } = await supabase
     .from("branches")
     .select("branch_name")
+    .eq("organization_id", profile?.organization_id || "")
     .order("branch_name");
 
   // Fetch sales data
