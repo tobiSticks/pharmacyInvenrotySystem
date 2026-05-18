@@ -21,7 +21,7 @@ export async function loginAction(prevState: unknown, formData: FormData) {
   });
 
   if (authError || !authData.user) {
-    return { error: "Invalid email or password." };
+    return { error: authError?.message || "Invalid email or password." };
   }
 
   // 2. Fetch the profile details (including role)

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { updateProductAction, deleteProductAction } from "../actions";
+import { updateProductAction, deleteProductAction, restockProductAction } from "../actions";
 import { createClient } from "@/utils/supabase/client";
 import { 
   Package, 

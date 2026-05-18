@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useMemo, useTransition } from "react";
+import React, { useState, useMemo, useTransition, Fragment } from "react";
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart 
 } from "recharts";
 import { 
-  Download, FileSpreadsheet, FileText, ChevronLeft, Building2, TrendingUp, Wallet, Calendar, Filter, Zap, LogOut
+  Download, FileSpreadsheet, FileText, ChevronLeft, Building2, TrendingUp, Wallet, Calendar, Filter, Zap, LogOut, ChevronDown, ShoppingBag, ShoppingBasket
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
@@ -15,25 +15,45 @@ import autoTable from "jspdf-autotable";
 import { generateMockSalesDataAction } from "../actions";
 import { useRouter } from "next/navigation";
 
+interface TransactionItem {
+  id: string;
+  product_name: string;
+  sku: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  pack_type?: string;
+}
+
 interface Transaction {
   id: string;
   branch_name: string;
   total_amount: number;
   payment_method: string;
   cashier_name: string;
+  seller_name?: string;
+  buyer_name?: string;
   created_at: string;
+  status?: string;
+  type?: 'wholesale' | 'retail' | 'supermarket';
+  transaction_items?: TransactionItem[];
 }
 
 export default function SalesAuditClient({ initialTransactions, branches }: { initialTransactions: Transaction[], branches: string[] }) {
   const router = useRouter();
   const supabase = createClient();
   const [selectedBranch, setSelectedBranch] = useState<string>("All Branches");
+  const [selectedSection, setSelectedSection] = useState<string>("All Sections");
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
 
   const filteredTransactions = useMemo(() => {
-    if (selectedBranch === "All Branches") return initialTransactions;
-    return initialTransactions.filter(t => t.branch_name === selectedBranch);
-  }, [initialTransactions, selectedBranch]);
+    return initialTransactions.filter(t => {
+      const matchesBranch = selectedBranch === "All Branches" || t.branch_name === selectedBranch;
+      const matchesSection = selectedSection === "All Sections" || t.type === selectedSection;
+      return matchesBranch && matchesSection;
+    });
+  }, [initialTransactions, selectedBranch, selectedSection]);
 
   const metrics = useMemo(() => {
     const today = new Date();
@@ -45,6 +65,9 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
     const lastYear = new Date(today.getFullYear() - 1, 0, 1);
 
     let daily = 0, weekly = 0, monthly = 0, yearly = 0, lastYearly = 0;
+    let wholesaleTotal = 0;
+    let retailTotal = 0;
+    let supermarketTotal = 0;
 
     filteredTransactions.forEach(t => {
       const date = new Date(t.created_at);
@@ -55,13 +78,17 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
       if (date >= startOfMonth) monthly += amount;
       if (date >= startOfYear) yearly += amount;
       if (date >= lastYear && date < startOfYear) lastYearly += amount;
+
+      if (t.type === 'wholesale') wholesaleTotal += amount;
+      else if (t.type === 'retail') retailTotal += amount;
+      else if (t.type === 'supermarket') supermarketTotal += amount;
     });
 
     const yearlyGrowth = lastYearly === 0 
       ? (yearly > 0 ? 100 : 0) 
       : ((yearly - lastYearly) / lastYearly) * 100;
 
-    return { daily, weekly, monthly, yearly, yearlyGrowth };
+    return { daily, weekly, monthly, yearly, yearlyGrowth, wholesaleTotal, retailTotal, supermarketTotal };
   }, [filteredTransactions]);
 
   // Aggregate for chart
@@ -92,38 +119,60 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
   }, [filteredTransactions]);
 
   const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => ({
-      Date: new Date(t.created_at).toLocaleString(),
-      Branch: t.branch_name,
-      Cashier: t.cashier_name,
-      Method: t.payment_method,
-      Amount: t.total_amount
-    })));
+    const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => {
+      const itemsList = t.transaction_items?.map(item => 
+        `${item.product_name} (${item.sku}) x${item.quantity}${item.pack_type ? ` [${item.pack_type}]` : ''}`
+      ).join("; ") || "No items";
+
+      return {
+        Date: new Date(t.created_at).toLocaleString(),
+        Branch: t.branch_name,
+        Section: t.type ? t.type.toUpperCase() : "DEMO / MOCK",
+        Seller: t.seller_name || t.cashier_name || "-",
+        Buyer: t.buyer_name || "-",
+        Status: t.status ? t.status.toUpperCase() : "COMPLETED",
+        Method: t.payment_method || "N/A",
+        "Total Amount": Number(t.total_amount),
+        "Items Sold": itemsList
+      };
+    }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales");
     XLSX.writeFile(wb, `Sales_Audit_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const exportPDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(20);
-    doc.text("Sales Audit Report", 14, 22);
+    doc.text("Sales Audit Report", 14, 18);
     doc.setFontSize(10);
-    doc.text(`Branch: ${selectedBranch}`, 14, 30);
-    doc.text(`Date Generated: ${new Date().toLocaleString()}`, 14, 36);
+    doc.text(`Branch: ${selectedBranch} | Section: ${selectedSection}`, 14, 26);
+    doc.text(`Date Generated: ${new Date().toLocaleString()}`, 14, 32);
 
     autoTable(doc, {
-      startY: 45,
-      head: [["Date", "Branch", "Cashier", "Method", "Amount"]],
-      body: filteredTransactions.map(t => [
-        new Date(t.created_at).toLocaleString(),
-        t.branch_name,
-        t.cashier_name || "-",
-        t.payment_method,
-        `₦${Number(t.total_amount).toFixed(2)}`
-      ]),
+      startY: 38,
+      head: [["Date", "Branch", "Section", "Seller", "Buyer", "Status", "Items", "Amount"]],
+      body: filteredTransactions.map(t => {
+        const itemsList = t.transaction_items?.map(item => 
+          `${item.product_name} (x${item.quantity})`
+        ).join(", ") || "-";
+
+        return [
+          new Date(t.created_at).toLocaleString(),
+          t.branch_name,
+          t.type ? t.type.toUpperCase() : "MOCK",
+          t.seller_name || t.cashier_name || "-",
+          t.buyer_name || "-",
+          t.status ? t.status.toUpperCase() : "COMPLETED",
+          itemsList.length > 60 ? itemsList.substring(0, 60) + "..." : itemsList,
+          `₦${Number(t.total_amount).toFixed(2)}`
+        ];
+      }),
       theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229] }
+      headStyles: { fillColor: [79, 70, 229] },
+      columnStyles: {
+        6: { cellWidth: 70 } // Give the items column more space
+      }
     });
 
     doc.save(`Sales_Audit_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -134,6 +183,10 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
       await generateMockSalesDataAction();
       router.refresh();
     });
+  };
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   return (
@@ -158,7 +211,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           {initialTransactions.length === 0 && (
             <button 
               onClick={handleGenerateMock}
@@ -178,29 +231,48 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
               <FileText size={16} /> PDF
             </button>
           </div>
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
+          >
+            <LogOut size={16} className="text-rose-500" /> SIGN OUT
+          </button>
         </div>
-
-        <button 
-          onClick={() => supabase.auth.signOut()}
-          className="flex items-center gap-2 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 px-6 py-3 rounded-2xl font-black text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
-        >
-          <LogOut size={16} className="text-rose-500" /> SIGN OUT
-        </button>
       </div>
 
-      <div className="flex items-center gap-3 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-fit">
-        <Filter size={18} className="text-slate-400" />
-        <span className="text-sm font-medium text-slate-300">Filter Branch:</span>
-        <select 
-          value={selectedBranch}
-          onChange={(e) => setSelectedBranch(e.target.value)}
-          className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
-        >
-          <option value="All Branches">All Branches</option>
-          {branches.map(b => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </select>
+      {/* Interactive Filters Panel */}
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl w-fit">
+        <div className="flex items-center gap-2">
+          <Filter size={18} className="text-slate-400" />
+          <span className="text-sm font-medium text-slate-300">Branch:</span>
+          <select 
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
+          >
+            <option value="All Branches">All Branches</option>
+            {branches.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="hidden sm:block w-[1px] bg-slate-800 h-6 mx-2" />
+
+        <div className="flex items-center gap-2">
+          <ShoppingBasket size={18} className="text-slate-400" />
+          <span className="text-sm font-medium text-slate-300">Section:</span>
+          <select 
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
+          >
+            <option value="All Sections">All Sections</option>
+            <option value="wholesale">Wholesale</option>
+            <option value="retail">Retail</option>
+            <option value="supermarket">Supermarket</option>
+          </select>
+        </div>
       </div>
 
       {/* Metric Cards */}
@@ -216,6 +288,37 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           color={metrics.yearlyGrowth >= 0 ? "emerald" : "rose"} 
           isCurrency={false} 
         />
+      </div>
+
+      {/* Section Totals Breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-slate-900/30 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl">
+            <ShoppingBag size={24} />
+          </div>
+          <div>
+            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Wholesale Channel</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.wholesaleTotal.toFixed(2)}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl">
+            <ShoppingBag size={24} />
+          </div>
+          <div>
+            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Retail Pharmacy</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.retailTotal.toFixed(2)}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl">
+            <ShoppingBag size={24} />
+          </div>
+          <div>
+            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Supermarket Section</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.supermarketTotal.toFixed(2)}</div>
+          </div>
+        </div>
       </div>
 
       {/* Chart */}
@@ -248,10 +351,11 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
 
       {/* Live Feed Table */}
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="p-6 border-b border-slate-800">
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Building2 size={20} className="text-purple-400" /> Live Transaction Feed
           </h3>
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{filteredTransactions.length} Transactions Found</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -259,44 +363,126 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
               <tr>
                 <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Timestamp</th>
                 <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Branch</th>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Cashier</th>
-                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Method</th>
+                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Section</th>
+                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Seller</th>
+                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Buyer</th>
+                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap">Status</th>
                 <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap text-right">Total Amount</th>
+                <th className="px-6 py-4 text-sm font-semibold text-slate-400 whitespace-nowrap text-center">Items</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
-                    No transactions found for this branch.
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">
+                    No transactions found for the selected criteria.
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.slice(0, 50).map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-800/30 transition-colors group">
-                    <td className="px-6 py-4 text-slate-300 text-sm">
-                      {new Date(t.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="px-2.5 py-1 bg-slate-800 text-slate-300 rounded-md text-xs font-semibold border border-slate-700">
-                        {t.branch_name}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-sm">
-                      {t.cashier_name || "Unknown"}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        {t.payment_method}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <span className="text-white font-bold bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                        ₦{Number(t.total_amount).toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                filteredTransactions.slice(0, 50).map((t) => {
+                  const isExpanded = !!expandedRows[t.id];
+                  return (
+                    <Fragment key={t.id}>
+                      <tr className="hover:bg-slate-800/30 transition-colors group">
+                        <td className="px-6 py-4 text-slate-300 text-sm whitespace-nowrap">
+                          {new Date(t.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2.5 py-1 bg-slate-800 text-slate-300 rounded-md text-xs font-semibold border border-slate-700">
+                            {t.branch_name}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-md text-xs font-bold border ${
+                            t.type === 'wholesale' 
+                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
+                              : t.type === 'retail' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                              : t.type === 'supermarket' 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                              : 'bg-slate-800 text-slate-400 border-slate-700'
+                          }`}>
+                            {t.type ? t.type.toUpperCase() : "MOCK"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-300 text-sm font-semibold whitespace-nowrap">
+                          {t.seller_name || t.cashier_name || "Unknown"}
+                        </td>
+                        <td className="px-6 py-4 text-slate-400 text-sm whitespace-nowrap">
+                          {t.buyer_name || "Walk-in Customer"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
+                            t.status === 'completed' 
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                              : t.status === 'pending'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {t.status ? t.status.toUpperCase() : "COMPLETED"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <span className="text-white font-bold bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                            ₦{Number(t.total_amount).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center whitespace-nowrap">
+                          <button 
+                            onClick={() => toggleRow(t.id)}
+                            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 mx-auto bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20"
+                          >
+                            {isExpanded ? "Hide" : "View"} ({t.transaction_items?.length || 0} items)
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-950/40">
+                          <td colSpan={8} className="px-8 py-6">
+                            <div className="bg-slate-950/80 rounded-2xl border border-slate-800 p-6 max-w-4xl animate-in slide-in-from-top-2 duration-300">
+                              <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-widest flex items-center gap-2">
+                                <ShoppingBag size={16} className="text-blue-400" /> Items Sold Breakdown
+                              </h4>
+                              {(!t.transaction_items || t.transaction_items.length === 0) ? (
+                                <p className="text-xs text-slate-500 italic">No item details recorded for this transaction.</p>
+                              ) : (
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-900/60 text-slate-400 font-bold uppercase tracking-widest border-b border-slate-800">
+                                      <th className="px-4 py-2">Product Name</th>
+                                      <th className="px-4 py-2">SKU</th>
+                                      <th className="px-4 py-2 text-center">Qty</th>
+                                      <th className="px-4 py-2 text-right">Unit Price</th>
+                                      {t.type === 'wholesale' && <th className="px-4 py-2">Pack Info</th>}
+                                      <th className="px-4 py-2 text-right">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-800/40">
+                                    {t.transaction_items.map((item, idx) => (
+                                      <tr key={item.id || idx} className="hover:bg-slate-900/40 transition-colors">
+                                        <td className="px-4 py-3 font-bold text-slate-200">{item.product_name}</td>
+                                        <td className="px-4 py-3 text-slate-500 font-mono">{item.sku}</td>
+                                        <td className="px-4 py-3 text-center text-white font-bold">{item.quantity}</td>
+                                        <td className="px-4 py-3 text-right text-slate-300">₦{Number(item.unit_price).toFixed(2)}</td>
+                                        {t.type === 'wholesale' && (
+                                          <td className="px-4 py-3 text-slate-400">
+                                            {item.pack_type ? <span className="px-2 py-0.5 bg-slate-800 text-[10px] uppercase font-bold rounded">{item.pack_type}</span> : "-"}
+                                          </td>
+                                        )}
+                                        <td className="px-4 py-3 text-right font-bold text-emerald-400">₦{Number(item.subtotal).toFixed(2)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
