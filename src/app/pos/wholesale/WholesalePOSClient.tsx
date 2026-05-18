@@ -150,7 +150,8 @@ export default function WholesalePOSClient({ initialProducts, branchName, branch
         items: cart,
         sellerName: checkoutData.sellerName,
         buyerName: checkoutData.buyerName,
-        totalAmount: cartTotal
+        totalAmount: cartTotal,
+        date: checkoutData.date
       });
 
       if (result.success) {

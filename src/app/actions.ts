@@ -428,6 +428,7 @@ export async function generateMockSalesDataAction() {
   // Generate 50 random transactions across last 30 days
   const methods = ['Cash', 'Card', 'Mobile Transfer'];
   const branches = ['Main Branch', 'Downtown Pharmacy', 'Uptown Retail', 'City Supermarket'];
+  const types = ['retail', 'wholesale', 'supermarket'];
   
   const mockTransactions = Array.from({ length: 50 }).map((_, i) => {
     // Random date within last 365 days, weighted towards recent
@@ -438,16 +439,59 @@ export async function generateMockSalesDataAction() {
     return {
       organization_id: profile.organization_id,
       branch_name: branches[Math.floor(Math.random() * branches.length)],
-      total_amount: +(Math.random() * 500 + 10).toFixed(2),
+      total_amount: +(Math.random() * 500 + 50).toFixed(2),
       payment_method: methods[Math.floor(Math.random() * methods.length)],
       cashier_id: authData.user.id,
       cashier_name: "Admin User",
-      created_at: date.toISOString()
+      created_at: date.toISOString(),
+      seller_name: "Admin User",
+      buyer_name: "Walk-in Customer",
+      status: 'completed',
+      type: types[Math.floor(Math.random() * types.length)],
+      is_audited: true,
+      is_cleared: true
     };
   });
 
-  const { error } = await supabase.from("transactions").insert(mockTransactions);
-  if (error) return { error: error.message };
+  const { data: insertedTransactions, error: insertError } = await supabase
+    .from("transactions")
+    .insert(mockTransactions)
+    .select("id, total_amount");
+
+  if (insertError) return { error: insertError.message };
+
+  // For each inserted transaction, create 2-3 mock items
+  const mockProducts = [
+    { name: "Paracetamol 500mg", sku: "PRC-500-TAB" },
+    { name: "Amoxicillin 250mg", sku: "AMX-250-CAP" },
+    { name: "Ibuprofen 400mg", sku: "IBU-400-TAB" },
+    { name: "Vitamin C 1000mg", sku: "VIT-C-EFFER" },
+    { name: "Cetirizine 10mg", sku: "CET-10-TAB" }
+  ];
+
+  const itemsToInsert: any[] = [];
+  insertedTransactions.forEach((t: any) => {
+    const itemCount = Math.floor(Math.random() * 3) + 1; // 1 to 3 items
+    const selectedProducts = [...mockProducts].sort(() => 0.5 - Math.random()).slice(0, itemCount);
+    
+    // Divide total amount among items
+    const basePrice = +(t.total_amount / itemCount).toFixed(2);
+    selectedProducts.forEach((p, idx) => {
+      const qty = Math.floor(Math.random() * 3) + 1;
+      const unitPrice = +(basePrice / qty).toFixed(2);
+      itemsToInsert.push({
+        transaction_id: t.id,
+        product_name: p.name,
+        sku: p.sku,
+        quantity: qty,
+        unit_price: unitPrice,
+        subtotal: +(unitPrice * qty).toFixed(2)
+      });
+    });
+  });
+
+  const { error: itemsError } = await supabase.from("transaction_items").insert(itemsToInsert);
+  if (itemsError) return { error: "Transactions created, but failed to insert items: " + itemsError.message };
   
   return { success: "Mock data generated successfully." };
 }
@@ -458,6 +502,7 @@ export async function createWholesaleTransactionAction(data: {
   sellerName: string;
   buyerName: string;
   totalAmount: number;
+  date?: string;
 }) {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
@@ -474,6 +519,10 @@ export async function createWholesaleTransactionAction(data: {
 
   const supabaseAdmin = createAdminClient();
 
+  const createdAt = data.date 
+    ? new Date(data.date + 'T' + new Date().toTimeString().split(' ')[0]).toISOString()
+    : new Date().toISOString();
+
   // 2. Create the transaction (Pending status)
   const { data: transaction, error: tError } = await supabaseAdmin
     .from("transactions")
@@ -487,7 +536,8 @@ export async function createWholesaleTransactionAction(data: {
       buyer_name: data.buyerName,
       cashier_id: authData.user.id,
       cashier_name: data.sellerName, // Matches schema field
-      type: 'wholesale' // Discriminator for reports
+      type: 'wholesale', // Discriminator for reports
+      created_at: createdAt
     })
     .select("id")
     .single();
@@ -572,7 +622,8 @@ export async function createRetailTransactionAction(
     buyerName: string, 
     sellerName: string,
     totalAmount: number,
-    items: any[] 
+    items: any[],
+    date?: string
   }
 ) {
   const supabase = await createClient();
@@ -591,6 +642,10 @@ export async function createRetailTransactionAction(
 
   const supabaseAdmin = createAdminClient();
 
+  const createdAt = data.date 
+    ? new Date(data.date + 'T' + new Date().toTimeString().split(' ')[0]).toISOString()
+    : new Date().toISOString();
+
   // 2. Create the transaction (Pending status)
   const { data: transaction, error: tError } = await supabaseAdmin
     .from("transactions")
@@ -604,7 +659,8 @@ export async function createRetailTransactionAction(
       buyer_name: data.buyerName,
       cashier_id: authData.user.id,
       cashier_name: data.sellerName, 
-      type: 'retail' // Discriminator for reports
+      type: 'retail', // Discriminator for reports
+      created_at: createdAt
     })
     .select("id")
     .single();
@@ -661,7 +717,8 @@ export async function createSupermarketTransactionAction(
     buyerName: string, 
     sellerName: string,
     totalAmount: number,
-    items: any[] 
+    items: any[],
+    date?: string
   }
 ) {
   const supabase = await createClient();
@@ -678,6 +735,10 @@ export async function createSupermarketTransactionAction(
 
   const supabaseAdmin = createAdminClient();
 
+  const createdAt = data.date 
+    ? new Date(data.date + 'T' + new Date().toTimeString().split(' ')[0]).toISOString()
+    : new Date().toISOString();
+
   // Create the transaction (Completed immediately for supermarket)
   const { data: transaction, error: tError } = await supabaseAdmin
     .from("transactions")
@@ -691,7 +752,8 @@ export async function createSupermarketTransactionAction(
       buyer_name: data.buyerName,
       cashier_id: authData.user.id,
       cashier_name: data.sellerName, 
-      type: 'supermarket'
+      type: 'supermarket',
+      created_at: createdAt
     })
     .select("id")
     .single();
@@ -744,8 +806,7 @@ export async function collectPaymentAction(transactionId: string) {
   const { error } = await supabaseAdmin
     .from("transactions")
     .update({ 
-      status: 'completed',
-      cashier_id: authData.user.id
+      status: 'completed'
     })
     .eq("id", transactionId);
 

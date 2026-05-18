@@ -48,6 +48,12 @@ export default async function SalesAuditPage() {
           </div>
           <span className="text-xs font-black uppercase tracking-widest">Back to Dashboard</span>
         </Link>
+        {error && (
+          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-2xl text-sm font-bold flex items-center gap-3 animate-pulse">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+            Error loading transactions: {error}
+          </div>
+        )}
         <SalesAuditClient 
           initialTransactions={transactions || []} 
           branches={branches?.map(b => b.branch_name) || []} 

@@ -128,7 +128,8 @@ export default function RetailPOSClient({ initialProducts, branchName, branchId,
         items: cart,
         sellerName: checkoutData.sellerName,
         buyerName: checkoutData.buyerName,
-        totalAmount: cartTotal
+        totalAmount: cartTotal,
+        date: checkoutData.date
       });
 
       if (result.success) {

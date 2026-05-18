@@ -129,7 +129,8 @@ export default function CashierDashboardClient({
         items: cart,
         sellerName: checkoutData.sellerName,
         buyerName: checkoutData.buyerName,
-        totalAmount: cartTotal
+        totalAmount: cartTotal,
+        date: checkoutData.date
       });
 
       if (result.success) {
@@ -556,22 +557,66 @@ export default function CashierDashboardClient({
       {isCheckingOut && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setIsCheckingOut(false)} />
-          <div className="relative bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-8 shadow-2xl">
+          <div className="relative bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-300">
             <div className="flex items-center gap-4 mb-8">
-              <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-500">
+              <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-500 animate-pulse">
                 <Ticket size={28} />
               </div>
-              <h2 className="text-3xl font-black text-white">Finalize Sale</h2>
+              <div>
+                <h2 className="text-3xl font-black text-white tracking-tight">Finalize Sale</h2>
+                <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mt-1">Supermarket POS Checkout</p>
+              </div>
             </div>
             
-            <div className="space-y-6 bg-slate-950/50 border border-slate-800 p-6 rounded-2xl mb-10">
-               <div className="flex justify-between items-center pb-4 border-b border-slate-900">
-                  <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Grand Total</span>
-                  <span className="text-3xl font-black text-amber-500">₦{cartTotal.toLocaleString()}</span>
-               </div>
-               <div className="pt-2">
-                 <div className="text-xs text-center text-slate-500 font-medium">Verify cash received from customer. This sale is immediately recorded as COMPLETED.</div>
-               </div>
+            <div className="space-y-6 mb-8">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Seller Name</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                    <input 
+                      value={checkoutData.sellerName}
+                      onChange={e => setCheckoutData({...checkoutData, sellerName: e.target.value})}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition-all font-bold"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Sale Date</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                    <input 
+                      type="date"
+                      value={checkoutData.date}
+                      onChange={e => setCheckoutData({...checkoutData, date: e.target.value})}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition-all font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">Customer / Buyer Name</label>
+                <div className="relative">
+                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                  <input 
+                    placeholder="Enter customer name..."
+                    value={checkoutData.buyerName}
+                    onChange={e => setCheckoutData({...checkoutData, buyerName: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-4 text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition-all font-bold placeholder-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-slate-950/50 border border-slate-800 p-6 rounded-2xl">
+                 <div className="flex justify-between items-center pb-4 border-b border-slate-900">
+                    <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Grand Total</span>
+                    <span className="text-3xl font-black text-amber-500">₦{cartTotal.toLocaleString()}</span>
+                 </div>
+                 <div className="pt-4">
+                   <div className="text-xs text-center text-slate-500 font-medium">Verify cash received from customer. This sale is immediately recorded as COMPLETED.</div>
+                 </div>
+              </div>
             </div>
 
             <div className="flex gap-4">
@@ -579,9 +624,10 @@ export default function CashierDashboardClient({
               <button 
                 onClick={handleCheckout} 
                 disabled={isPending}
-                className="flex-[2] bg-amber-600 hover:bg-amber-500 text-white font-black py-5 rounded-2xl shadow-xl transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50"
+                className="flex-[2] bg-amber-600 hover:bg-amber-500 text-white font-black py-5 rounded-2xl shadow-[0_10px_40px_rgba(245,158,11,0.3)] transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
               >
                 {isPending ? "PROCESSING..." : "CONFIRM SALE & PRINT"}
+                {!isPending && <CheckCircle2 size={24} />}
               </button>
             </div>
           </div>
