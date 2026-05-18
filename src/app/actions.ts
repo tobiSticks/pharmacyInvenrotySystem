@@ -393,13 +393,54 @@ export async function getSalesDataAction() {
     const transactions = await fetchAllRows(
       supabaseAdmin,
       "transactions",
-      "*, transaction_items (*)",
+      "*",
       "organization_id",
       profile.organization_id
     );
 
+    const txIds = (transactions || []).map(t => t.id);
+    let allItems: any[] = [];
+
+    if (txIds.length > 0) {
+      const batchSize = 100;
+      const batches = [];
+      for (let i = 0; i < txIds.length; i += batchSize) {
+        batches.push(txIds.slice(i, i + batchSize));
+      }
+
+      const promises = batches.map(batch => 
+        supabaseAdmin
+          .from("transaction_items")
+          .select("*")
+          .in("transaction_id", batch)
+      );
+
+      const results = await Promise.all(promises);
+      for (const res of results) {
+        if (res.error) {
+          throw new Error("Failed to fetch transaction items: " + res.error.message);
+        }
+        if (res.data) {
+          allItems.push(...res.data);
+        }
+      }
+    }
+
+    const itemsByTxId: Record<string, any[]> = {};
+    allItems.forEach(item => {
+      if (!itemsByTxId[item.transaction_id]) {
+        itemsByTxId[item.transaction_id] = [];
+      }
+      itemsByTxId[item.transaction_id].push(item);
+    });
+
+    const transactionsWithItems = (transactions || []).map(t => ({
+      ...t,
+      transaction_items: itemsByTxId[t.id] || []
+    }));
+
     // Re-order locally since fetchAllRows might not preserve order if multiple pages
-    const sortedTransactions = (transactions || []).sort((a, b) => 
+    const sortedTransactions = (transactionsWithItems || []).sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
