@@ -904,3 +904,51 @@ export async function checkAuditStatusAction() {
   const isAllAudited = sales.every(s => s.is_audited);
   return { hasSales: true, isAudited: isAllAudited };
 }
+
+export async function getLowStockDataAction() {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+
+  if (!authData.user) {
+    return { error: "Unauthorized access.", branches: [], products: [] };
+  }
+
+  // Fetch organization_id from profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", authData.user.id)
+    .single();
+
+  if (!profile?.organization_id) {
+    return { error: "Organization profile not found.", branches: [], products: [] };
+  }
+
+  try {
+    // 1. Fetch branches
+    const { data: branches, error: branchesError } = await supabase
+      .from("branches")
+      .select("*")
+      .or(`admin_id.eq.${authData.user.id},organization_id.eq.${profile.organization_id}`)
+      .order("branch_name");
+
+    if (branchesError) throw branchesError;
+
+    // 2. Fetch all products with their balances across all branches
+    const products = await fetchAllProducts(
+      supabase,
+      profile.organization_id,
+      "*, product_balances ( wholesale_qty, retail_qty, supermarket_qty, branch_id )"
+    );
+
+    return {
+      success: true,
+      branches: branches || [],
+      products: products || [],
+    };
+  } catch (error: any) {
+    console.error("Error in getLowStockDataAction:", error);
+    return { error: error.message || "Failed to fetch low stock data.", branches: [], products: [] };
+  }
+}
+

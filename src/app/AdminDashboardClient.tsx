@@ -6,7 +6,7 @@ import { addBranchAction, createStaffAction } from "./actions";
 import Link from "next/link";
 import AdminSidebar from "@/components/AdminSidebar";
 
-export default function AdminDashboardClient({ branches }: { branches: string[] }) {
+export default function AdminDashboardClient({ branches = [], products = [] }: { branches: any[], products?: any[] }) {
   const [branchState, addBranch, isAddingBranch] = useActionState(addBranchAction, undefined);
   const [staffState, createStaff, isCreatingStaff] = useActionState(createStaffAction, undefined);
 
@@ -26,6 +26,44 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
 
   const branchFormRef = useRef<HTMLFormElement>(null);
   const staffFormRef = useRef<HTMLFormElement>(null);
+
+  const safeProducts = products || [];
+  
+  // Calculate real-time alerts across channels
+  let warehouseLowCount = 0;
+  let wholesaleLowCount = 0;
+  let retailLowCount = 0;
+  let supermarketLowCount = 0;
+  let criticalCount = 0;
+
+  safeProducts.forEach(product => {
+    const minStock = product.min_stock_level || 10;
+
+    // 1. Warehouse Stock
+    if (product.quantity <= minStock) {
+      warehouseLowCount++;
+      if (product.quantity === 0) criticalCount++;
+    }
+
+    // 2. Branch Balances
+    const balances = product.product_balances || [];
+    balances.forEach((balance: any) => {
+      if (balance.wholesale_qty <= minStock) {
+        wholesaleLowCount++;
+        if (balance.wholesale_qty === 0) criticalCount++;
+      }
+      if (balance.retail_qty <= minStock) {
+        retailLowCount++;
+        if (balance.retail_qty === 0) criticalCount++;
+      }
+      if (balance.supermarket_qty <= minStock) {
+        supermarketLowCount++;
+        if (balance.supermarket_qty === 0) criticalCount++;
+      }
+    });
+  });
+
+  const totalLowAlerts = warehouseLowCount + wholesaleLowCount + retailLowCount + supermarketLowCount;
 
   useEffect(() => {
     if (branchState?.success) {
@@ -131,8 +169,202 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
                 <div className="text-slate-500 text-xs translate-y-[-1px]">View all imported products</div>
               </div>
             </Link>
+
+            <Link 
+              href="/inventory/low-stock" 
+              className={`flex items-center gap-3 bg-slate-900/80 hover:bg-amber-600/20 border ${totalLowAlerts > 0 ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-slate-800 hover:border-amber-500/50'} px-6 py-4 rounded-2xl transition-all group relative`}
+            >
+              <div className={`p-2 ${totalLowAlerts > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'} rounded-lg group-hover:bg-amber-500/30 transition-colors`}>
+                <AlertCircle size={20} className={totalLowAlerts > 0 ? 'animate-pulse' : ''} />
+              </div>
+              <div>
+                <div className="text-white font-bold text-sm flex items-center gap-1.5">
+                  Low Stock Alerts
+                  {totalLowAlerts > 0 && (
+                    <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded-full animate-bounce">
+                      {totalLowAlerts}
+                    </span>
+                  )}
+                </div>
+                <div className="text-slate-500 text-xs translate-y-[-1px]">
+                  {totalLowAlerts > 0 ? `${criticalCount} critical items at zero` : 'All channels fully stocked'}
+                </div>
+              </div>
+            </Link>
           </div>
         </div>
+
+        {/* Real-time Low Stock Feed Widget */}
+        {totalLowAlerts > 0 && (
+          <div className="lg:col-span-12 bg-slate-900/40 backdrop-blur-xl border border-amber-500/20 rounded-3xl p-6 md:p-8 relative overflow-hidden shadow-2xl hover:border-amber-500/40 transition-all">
+            <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+              <AlertCircle size={120} className="text-amber-500" />
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-400 animate-pulse">
+                  <AlertCircle size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    Real-time Stock Alerts
+                    <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs px-2.5 py-0.5 rounded-full font-semibold">
+                      {totalLowAlerts} alert{totalLowAlerts > 1 ? 's' : ''} active
+                    </span>
+                  </h2>
+                  <p className="text-sm text-slate-400">
+                    The following items are below minimum levels across your channels.
+                  </p>
+                </div>
+              </div>
+
+              <Link 
+                href="/inventory/low-stock" 
+                className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold text-xs tracking-widest px-5 py-2.5 rounded-xl shadow-lg shadow-amber-600/10 hover:shadow-amber-500/20 hover:scale-105 transition-all text-center"
+              >
+                OPEN ALERT CENTER
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-slate-950/40 border border-slate-800/80 p-4 rounded-2xl flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Warehouse</span>
+                <span className={`text-2xl font-extrabold mt-1 ${warehouseLowCount > 0 ? 'text-amber-400' : 'text-slate-300'}`}>
+                  {warehouseLowCount} <span className="text-xs font-normal text-slate-500">low</span>
+                </span>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-800/80 p-4 rounded-2xl flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Wholesale POS</span>
+                <span className={`text-2xl font-extrabold mt-1 ${wholesaleLowCount > 0 ? 'text-indigo-400' : 'text-slate-300'}`}>
+                  {wholesaleLowCount} <span className="text-xs font-normal text-slate-500">low</span>
+                </span>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-800/80 p-4 rounded-2xl flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Retail POS</span>
+                <span className={`text-2xl font-extrabold mt-1 ${retailLowCount > 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                  {retailLowCount} <span className="text-xs font-normal text-slate-500">low</span>
+                </span>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-800/80 p-4 rounded-2xl flex flex-col justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supermarket POS</span>
+                <span className={`text-2xl font-extrabold mt-1 ${supermarketLowCount > 0 ? 'text-purple-400' : 'text-slate-300'}`}>
+                  {supermarketLowCount} <span className="text-xs font-normal text-slate-500">low</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="border border-slate-800 bg-slate-950/20 rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs animate-in fade-in duration-300">
+                  <thead className="bg-slate-950/40 text-slate-500 font-bold uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Product</th>
+                      <th className="px-4 py-3">Location / Department</th>
+                      <th className="px-4 py-3">Current Qty</th>
+                      <th className="px-4 py-3">Min Level</th>
+                      <th className="px-4 py-3 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {(() => {
+                      const list: any[] = [];
+                      safeProducts.forEach(product => {
+                        const minStock = product.min_stock_level || 10;
+                        if (product.quantity <= minStock) {
+                          list.push({
+                            id: product.id,
+                            name: product.name,
+                            sku: product.sku,
+                            channel: 'Warehouse',
+                            location: 'Central Warehouse',
+                            qty: product.quantity,
+                            min: minStock,
+                          });
+                        }
+                        const balances = product.product_balances || [];
+                        balances.forEach((bal: any) => {
+                          const br = branches.find(b => b.id === bal.branch_id);
+                          const bName = br?.branch_name || 'Branch';
+                          if (bal.wholesale_qty <= minStock) {
+                            list.push({
+                              id: product.id,
+                              name: product.name,
+                              sku: product.sku,
+                              channel: 'Wholesale',
+                              location: `${bName} (Wholesale)`,
+                              qty: bal.wholesale_qty,
+                              min: minStock,
+                            });
+                          }
+                          if (bal.retail_qty <= minStock) {
+                            list.push({
+                              id: product.id,
+                              name: product.name,
+                              sku: product.sku,
+                              channel: 'Retail',
+                              location: `${bName} (Retail)`,
+                              qty: bal.retail_qty,
+                              min: minStock,
+                            });
+                          }
+                          if (bal.supermarket_qty <= minStock) {
+                            list.push({
+                              id: product.id,
+                              name: product.name,
+                              sku: product.sku,
+                              channel: 'Supermarket',
+                              location: `${bName} (Supermarket)`,
+                              qty: bal.supermarket_qty,
+                              min: minStock,
+                            });
+                          }
+                        });
+                      });
+
+                      const sortedList = list.sort((a, b) => a.qty - b.qty).slice(0, 5);
+
+                      if (sortedList.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-6 text-center text-slate-500 italic">
+                              No low stock alerts currently active.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return sortedList.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-800/20 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="font-semibold text-white">{item.name}</span>
+                            <span className="text-[10px] text-slate-500 font-mono block uppercase">{item.sku}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-slate-300 font-medium">{item.location}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`font-bold ${item.qty === 0 ? 'text-rose-500' : 'text-amber-500'}`}>
+                              {item.qty} units
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {item.min}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${item.qty === 0 ? 'bg-red-500/10 text-red-400 border-red-500/20 animate-pulse' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                              {item.qty === 0 ? 'EMPTY' : 'LOW STOCK'}
+                            </span>
+                          </td>
+                        </tr>
+                      ));
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Create Staff Account Form */}
         <div className="lg:col-span-8">
@@ -215,13 +447,13 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
                     <select
                       name="branchName"
                       required
-                      defaultValue={branches[0] || ""}
+                      defaultValue={branches[0]?.branch_name || ""}
                       className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 appearance-none transition-all duration-200"
                     >
                       {branches.length === 0 && <option value="">No branches available</option>}
                       {branches.map((branch) => (
-                        <option key={branch} value={branch}>
-                          {branch}
+                        <option key={branch.id} value={branch.branch_name}>
+                          {branch.branch_name}
                         </option>
                       ))}
                     </select>
@@ -299,16 +531,16 @@ export default function AdminDashboardClient({ branches }: { branches: string[] 
                   No branches currently added.
                 </div>
               ) : (
-                branches.map((branch, idx) => (
+                branches.map((branch) => (
                   <div
-                    key={idx}
+                    key={branch.id}
                     className="flex items-center gap-3 p-4 rounded-xl border border-slate-800 bg-slate-950/40 hover:bg-slate-800 transition-colors group cursor-default"
                   >
                     <div className="text-emerald-500 bg-emerald-500/10 p-2 rounded-lg group-hover:scale-110 transition-transform">
                       <MapPin size={16} />
                     </div>
                     <span className="font-medium text-slate-300 group-hover:text-white transition-colors">
-                      {branch}
+                      {branch.branch_name}
                     </span>
                   </div>
                 ))

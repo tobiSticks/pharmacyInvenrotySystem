@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchAllProducts } from "@/utils/supabase/queries";
 import { redirect } from "next/navigation";
 import AdminDashboardClient from "./AdminDashboardClient";
 
@@ -10,10 +11,10 @@ export default async function AdminPage() {
     redirect("/login");
   }
 
-  // Fetch role
+  // Fetch role & organization
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, organization_id")
     .eq("id", authData.user.id)
     .single();
 
@@ -43,13 +44,29 @@ export default async function AdminPage() {
     );
   }
 
+  // Fetch branches with details (id, branch_name)
   const { data: branches } = await supabase
     .from("branches")
-    .select("branch_name")
-    .eq("admin_id", authData.user.id)
+    .select("*")
+    .or(`admin_id.eq.${authData.user.id}${profile?.organization_id ? `,organization_id.eq.${profile.organization_id}` : ''}`)
     .order("branch_name");
 
-  const branchNames = branches ? branches.map((b) => b.branch_name) : [];
+  const branchList = branches || [];
 
-  return <AdminDashboardClient branches={branchNames} />;
+  // Fetch all inventory products for the organization to pass to the admin dashboard for calculating alerts!
+  let products: any[] = [];
+  try {
+    if (profile?.organization_id) {
+      products = await fetchAllProducts(
+        supabase,
+        profile.organization_id,
+        "*, product_balances ( wholesale_qty, retail_qty, supermarket_qty, branch_id )"
+      );
+    }
+  } catch (error) {
+    console.error("Error loading products on admin page:", error);
+  }
+
+  return <AdminDashboardClient branches={branchList} products={products} />;
 }
+
