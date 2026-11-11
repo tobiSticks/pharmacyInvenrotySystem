@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Users, ShieldCheck, ShoppingCart, UserCog, LogOut, LayoutDashboard, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
+import { Users, ShieldCheck, ShoppingCart, UserCog, LogOut, LayoutDashboard, ChevronLeft, ChevronRight, AlertCircle, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePresence } from "@/context/PresenceContext";
@@ -87,6 +87,14 @@ export default function AdminSidebar() {
           icon={<LayoutDashboard size={20} />} 
           label="Home" 
           active={pathname === "/"} 
+          collapsed={isCollapsed}
+        />
+
+        <SidebarLink 
+          href="/sales-audit" 
+          icon={<TrendingUp size={20} className={pathname === "/sales-audit" ? "text-blue-400" : "text-slate-400 group-hover:text-blue-300"} />} 
+          label="Sales Audit" 
+          active={pathname === "/sales-audit"} 
           collapsed={isCollapsed}
         />
 

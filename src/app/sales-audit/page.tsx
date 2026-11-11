@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import SalesAuditClient from "./SalesAuditClient";
 import { getSalesDataAction } from "../actions";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, AlertCircle } from "lucide-react";
 
 export default async function SalesAuditPage() {
   const supabase = await createClient();
@@ -16,9 +16,29 @@ export default async function SalesAuditPage() {
   // Fetch admin profile
   const { data: profile } = await supabase
     .from("profiles")
-    .select("organization_id")
+    .select("organization_id, role")
     .eq("id", authData.user.id)
-    .single();
+    .maybeSingle();
+
+  if (!profile?.organization_id) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center text-slate-100">
+        <div className="w-16 h-16 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-6 border border-amber-500/20 text-amber-400">
+          <AlertCircle size={32} />
+        </div>
+        <h1 className="text-3xl font-extrabold mb-3">Profile Setup Incomplete</h1>
+        <p className="text-slate-400 max-w-md text-sm mb-6">
+          Your account is logged in as <span className="text-white font-mono font-bold">{authData.user.email}</span>, but your profile has not been assigned to an organization.
+        </p>
+        <Link 
+          href="/" 
+          className="px-6 py-3 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xl"
+        >
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   // Fetch branches for filter
   const { data: branches } = await supabase
@@ -28,7 +48,7 @@ export default async function SalesAuditPage() {
     .order("branch_name");
 
   // Fetch sales data
-  const { transactions, error } = await getSalesDataAction();
+  const { transactions, analytics, totalCount, error } = await getSalesDataAction();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-8 sm:p-12 relative overflow-hidden">
@@ -56,6 +76,8 @@ export default async function SalesAuditPage() {
         )}
         <SalesAuditClient 
           initialTransactions={transactions || []} 
+          initialAnalytics={analytics}
+          totalCount={totalCount || 0}
           branches={branches?.map(b => b.branch_name) || []} 
         />
       </div>

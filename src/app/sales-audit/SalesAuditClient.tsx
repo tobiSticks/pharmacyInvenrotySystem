@@ -2,17 +2,17 @@
 
 import React, { useState, useMemo, useTransition, Fragment } from "react";
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart 
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart 
 } from "recharts";
 import { 
-  Download, FileSpreadsheet, FileText, ChevronLeft, Building2, TrendingUp, Wallet, Calendar, Filter, Zap, LogOut, ChevronDown, ShoppingBag, ShoppingBasket
+  FileSpreadsheet, FileText, ChevronLeft, ChevronRight, Building2, TrendingUp, Wallet, Calendar, Filter, Zap, LogOut, ChevronDown, ShoppingBag, ShoppingBasket, Loader2, RefreshCw
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { generateMockSalesDataAction } from "../actions";
+import { generateMockSalesDataAction, getSalesDataAction, getTransactionItemsAction } from "../actions";
 import { useRouter } from "next/navigation";
 
 interface TransactionItem {
@@ -39,23 +39,72 @@ interface Transaction {
   transaction_items?: TransactionItem[];
 }
 
-export default function SalesAuditClient({ initialTransactions, branches }: { initialTransactions: Transaction[], branches: string[] }) {
+interface SalesAuditAnalytics {
+  daily: number;
+  weekly: number;
+  monthly: number;
+  yearly: number;
+  last_yearly: number;
+  yearly_growth: number;
+  wholesale_total: number;
+  retail_total: number;
+  supermarket_total: number;
+  chart_data: { date: string; sales: number }[];
+}
+
+interface SalesAuditClientProps {
+  initialTransactions: Transaction[];
+  initialAnalytics?: SalesAuditAnalytics | null;
+  totalCount?: number;
+  branches: string[];
+}
+
+export default function SalesAuditClient({ 
+  initialTransactions, 
+  initialAnalytics,
+  totalCount = 0,
+  branches 
+}: SalesAuditClientProps) {
   const router = useRouter();
   const supabase = createClient();
+  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
+  const [analytics, setAnalytics] = useState<SalesAuditAnalytics | null>(initialAnalytics || null);
+  const [totalRecords, setTotalRecords] = useState<number>(totalCount || initialTransactions.length);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 50;
+
   const [selectedBranch, setSelectedBranch] = useState<string>("All Branches");
   const [selectedSection, setSelectedSection] = useState<string>("All Sections");
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [loadedItems, setLoadedItems] = useState<Record<string, TransactionItem[]>>({});
+  const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
 
+  // Client-side channel/type filter on the currently loaded transactions
   const filteredTransactions = useMemo(() => {
-    return initialTransactions.filter(t => {
+    return transactions.filter(t => {
       const matchesBranch = selectedBranch === "All Branches" || t.branch_name === selectedBranch;
       const matchesSection = selectedSection === "All Sections" || t.type === selectedSection;
       return matchesBranch && matchesSection;
     });
-  }, [initialTransactions, selectedBranch, selectedSection]);
+  }, [transactions, selectedBranch, selectedSection]);
 
+  // Derived metrics from server analytics or fallback calculation
   const metrics = useMemo(() => {
+    if (analytics && selectedSection === "All Sections") {
+      return {
+        daily: analytics.daily,
+        weekly: analytics.weekly,
+        monthly: analytics.monthly,
+        yearly: analytics.yearly,
+        yearlyGrowth: analytics.yearly_growth,
+        wholesaleTotal: analytics.wholesale_total,
+        retailTotal: analytics.retail_total,
+        supermarketTotal: analytics.supermarket_total,
+      };
+    }
+
+    // Fallback: Compute from active transactions
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startOfWeek = new Date(today);
@@ -71,7 +120,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
 
     filteredTransactions.forEach(t => {
       const date = new Date(t.created_at);
-      const amount = Number(t.total_amount);
+      const amount = Number(t.total_amount) || 0;
 
       if (date >= today) daily += amount;
       if (date >= startOfWeek) weekly += amount;
@@ -89,14 +138,18 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
       : ((yearly - lastYearly) / lastYearly) * 100;
 
     return { daily, weekly, monthly, yearly, yearlyGrowth, wholesaleTotal, retailTotal, supermarketTotal };
-  }, [filteredTransactions]);
+  }, [analytics, selectedSection, filteredTransactions]);
 
-  // Aggregate for chart
+  // Chart data from analytics or fallback
   const chartData = useMemo(() => {
+    if (analytics?.chart_data && analytics.chart_data.length > 0 && selectedSection === "All Sections") {
+      return analytics.chart_data;
+    }
+
     const last30Days = Array.from({ length: 30 }).map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      return Math.floor(d.getTime() / 86400000); // Day integer
+      return Math.floor(d.getTime() / 86400000);
     }).reverse();
 
     const grouped: Record<number, number> = {};
@@ -105,7 +158,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
     filteredTransactions.forEach(t => {
       const day = Math.floor(new Date(t.created_at).getTime() / 86400000);
       if (grouped[day] !== undefined) {
-        grouped[day] += Number(t.total_amount);
+        grouped[day] += Number(t.total_amount) || 0;
       }
     });
 
@@ -113,21 +166,82 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
       const d = new Date(day * 86400000);
       return {
         date: `${d.getMonth() + 1}/${d.getDate()}`,
-        sales: grouped[day]
+        sales: grouped[day] || 0
       };
     });
-  }, [filteredTransactions]);
+  }, [analytics, selectedSection, filteredTransactions]);
+
+  // Handle branch filter change (fetches fresh server data for selected branch)
+  const handleBranchChange = (newBranch: string) => {
+    setSelectedBranch(newBranch);
+    setCurrentPage(1);
+    startTransition(async () => {
+      const res = await getSalesDataAction({
+        branch: newBranch === "All Branches" ? undefined : newBranch,
+        limit: pageSize,
+        offset: 0
+      });
+      if (res.transactions) {
+        setTransactions(res.transactions);
+      }
+      if (res.analytics) {
+        setAnalytics(res.analytics);
+      }
+      if (typeof res.totalCount === 'number') {
+        setTotalRecords(res.totalCount);
+      }
+    });
+  };
+
+  // Handle pagination change
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    startTransition(async () => {
+      const res = await getSalesDataAction({
+        branch: selectedBranch === "All Branches" ? undefined : selectedBranch,
+        limit: pageSize,
+        offset: (newPage - 1) * pageSize
+      });
+      if (res.transactions) {
+        setTransactions(res.transactions);
+      }
+      if (typeof res.totalCount === 'number') {
+        setTotalRecords(res.totalCount);
+      }
+    });
+  };
+
+  // Toggle row expansion & fetch items on-demand if missing
+  const toggleRow = async (id: string, existingItems?: TransactionItem[]) => {
+    const isExpanding = !expandedRows[id];
+    setExpandedRows(prev => ({ ...prev, [id]: isExpanding }));
+
+    if (isExpanding && (!existingItems || existingItems.length === 0) && !loadedItems[id]) {
+      setLoadingItems(prev => ({ ...prev, [id]: true }));
+      try {
+        const res = await getTransactionItemsAction(id);
+        if (res.items) {
+          setLoadedItems(prev => ({ ...prev, [id]: res.items }));
+        }
+      } catch (err) {
+        console.error("Failed to load transaction items:", err);
+      } finally {
+        setLoadingItems(prev => ({ ...prev, [id]: false }));
+      }
+    }
+  };
 
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredTransactions.map(t => {
-      const itemsList = t.transaction_items?.map(item => 
+      const items = (t.transaction_items && t.transaction_items.length > 0) ? t.transaction_items : (loadedItems[t.id] || []);
+      const itemsList = items.map(item => 
         `${item.product_name} (${item.sku}) x${item.quantity}${item.pack_type ? ` [${item.pack_type}]` : ''}`
-      ).join("; ") || "No items";
+      ).join("; ") || "Itemized breakdown available online";
 
       return {
         Date: new Date(t.created_at).toLocaleString(),
         Branch: t.branch_name,
-        Section: t.type ? t.type.toUpperCase() : "DEMO / MOCK",
+        Section: t.type ? t.type.toUpperCase() : "GENERAL",
         Seller: t.seller_name || t.cashier_name || "-",
         Buyer: t.buyer_name || "-",
         Status: t.status ? t.status.toUpperCase() : "COMPLETED",
@@ -144,34 +258,35 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
   const exportPDF = () => {
     const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(20);
-    doc.text("Sales Audit Report", 14, 18);
+    doc.text("Sales Audit & Compliance Report", 14, 18);
     doc.setFontSize(10);
-    doc.text(`Branch: ${selectedBranch} | Section: ${selectedSection}`, 14, 26);
+    doc.text(`Branch: ${selectedBranch} | Section: ${selectedSection} | Page ${currentPage}`, 14, 26);
     doc.text(`Date Generated: ${new Date().toLocaleString()}`, 14, 32);
 
     autoTable(doc, {
       startY: 38,
       head: [["Date", "Branch", "Section", "Seller", "Buyer", "Status", "Items", "Amount"]],
       body: filteredTransactions.map(t => {
-        const itemsList = t.transaction_items?.map(item => 
+        const items = (t.transaction_items && t.transaction_items.length > 0) ? t.transaction_items : (loadedItems[t.id] || []);
+        const itemsList = items.map(item => 
           `${item.product_name} (x${item.quantity})`
         ).join(", ") || "-";
 
         return [
           new Date(t.created_at).toLocaleString(),
           t.branch_name,
-          t.type ? t.type.toUpperCase() : "MOCK",
+          t.type ? t.type.toUpperCase() : "SALE",
           t.seller_name || t.cashier_name || "-",
           t.buyer_name || "-",
           t.status ? t.status.toUpperCase() : "COMPLETED",
-          itemsList.length > 60 ? itemsList.substring(0, 60) + "..." : itemsList,
+          itemsList.length > 50 ? itemsList.substring(0, 50) + "..." : itemsList,
           `₦${Number(t.total_amount).toFixed(2)}`
         ];
       }),
       theme: 'grid',
       headStyles: { fillColor: [79, 70, 229] },
       columnStyles: {
-        6: { cellWidth: 70 } // Give the items column more space
+        6: { cellWidth: 70 }
       }
     });
 
@@ -185,12 +300,13 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
     });
   };
 
-  const toggleRow = (id: string) => {
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+  const startRecord = (currentPage - 1) * pageSize + 1;
+  const endRecord = Math.min(currentPage * pageSize, totalRecords);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header Bar */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <Link href="/" className="text-slate-500 hover:text-blue-400 flex items-center gap-1 text-sm transition-colors mb-2 group w-fit">
@@ -211,8 +327,13 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           </div>
         </div>
 
-        <div className="flex gap-3 flex-wrap">
-          {initialTransactions.length === 0 && (
+        <div className="flex gap-3 flex-wrap items-center">
+          {isPending && (
+            <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-3 py-2 rounded-xl text-xs font-bold animate-pulse">
+              <Loader2 size={14} className="animate-spin" /> Updating...
+            </div>
+          )}
+          {transactions.length === 0 && (
             <button 
               onClick={handleGenerateMock}
               disabled={isPending}
@@ -247,8 +368,9 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           <span className="text-sm font-medium text-slate-300">Branch:</span>
           <select 
             value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
+            onChange={(e) => handleBranchChange(e.target.value)}
+            disabled={isPending}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none disabled:opacity-50"
           >
             <option value="All Branches">All Branches</option>
             {branches.map(b => (
@@ -283,7 +405,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
         <MetricCard 
           title="Yearly Growth" 
           amount={`${metrics.yearlyGrowth > 0 ? '+' : ''}${metrics.yearlyGrowth.toFixed(1)}%`} 
-          subtext={`YTD: ₦${metrics.yearly.toFixed(2)}`}
+          subtext={`YTD: ₦${metrics.yearly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           icon={<TrendingUp size={20} />} 
           color={metrics.yearlyGrowth >= 0 ? "emerald" : "rose"} 
           isCurrency={false} 
@@ -298,7 +420,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           </div>
           <div>
             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Wholesale Channel</div>
-            <div className="text-xl font-extrabold text-white">₦{metrics.wholesaleTotal.toFixed(2)}</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.wholesaleTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -307,7 +429,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           </div>
           <div>
             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Retail Pharmacy</div>
-            <div className="text-xl font-extrabold text-white">₦{metrics.retailTotal.toFixed(2)}</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.retailTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -316,7 +438,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
           </div>
           <div>
             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Supermarket Section</div>
-            <div className="text-xl font-extrabold text-white">₦{metrics.supermarketTotal.toFixed(2)}</div>
+            <div className="text-xl font-extrabold text-white">₦{metrics.supermarketTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
       </div>
@@ -337,11 +459,11 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
               <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₦${value}`} />
+              <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₦${Number(value).toLocaleString()}`} />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
                 itemStyle={{ color: '#818cf8', fontWeight: 'bold' }}
-                formatter={(value: any) => [`₦${Number(value).toFixed(2)}`, 'Sales']}
+                formatter={(value: any) => [`₦${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Sales']}
               />
               <Area type="monotone" dataKey="sales" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
             </AreaChart>
@@ -351,12 +473,18 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
 
       {/* Live Feed Table */}
       <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Building2 size={20} className="text-purple-400" /> Live Transaction Feed
-          </h3>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{filteredTransactions.length} Transactions Found</span>
+        <div className="p-6 border-b border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <Building2 size={20} className="text-purple-400" />
+            <h3 className="text-lg font-bold text-white">Live Transaction Feed</h3>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-slate-400">
+              {totalRecords > 0 ? `Showing ${startRecord}-${endRecord} of ${totalRecords.toLocaleString()} Total Transactions` : `${filteredTransactions.length} Transactions Found`}
+            </span>
+          </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-950/80 backdrop-blur-md">
@@ -375,12 +503,15 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
               {filteredTransactions.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">
-                    No transactions found for the selected criteria.
+                    {isPending ? "Loading live transactions..." : "No transactions found for the selected criteria."}
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.slice(0, 50).map((t) => {
+                filteredTransactions.map((t) => {
                   const isExpanded = !!expandedRows[t.id];
+                  const isLoadingThisItem = !!loadingItems[t.id];
+                  const items = (t.transaction_items && t.transaction_items.length > 0) ? t.transaction_items : (loadedItems[t.id] || []);
+
                   return (
                     <Fragment key={t.id}>
                       <tr className="hover:bg-slate-800/30 transition-colors group">
@@ -402,7 +533,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
                               ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
                               : 'bg-slate-800 text-slate-400 border-slate-700'
                           }`}>
-                            {t.type ? t.type.toUpperCase() : "MOCK"}
+                            {t.type ? t.type.toUpperCase() : "GENERAL"}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-slate-300 text-sm font-semibold whitespace-nowrap">
@@ -424,16 +555,26 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
                         </td>
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           <span className="text-white font-bold bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                            ₦{Number(t.total_amount).toFixed(2)}
+                            ₦{Number(t.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center whitespace-nowrap">
                           <button 
-                            onClick={() => toggleRow(t.id)}
-                            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 mx-auto bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20"
+                            onClick={() => toggleRow(t.id, t.transaction_items)}
+                            disabled={isLoadingThisItem}
+                            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 mx-auto bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 disabled:opacity-50"
                           >
-                            {isExpanded ? "Hide" : "View"} ({t.transaction_items?.length || 0} items)
-                            <ChevronDown size={14} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                            {isLoadingThisItem ? (
+                              <>
+                                <Loader2 size={12} className="animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                {isExpanded ? "Hide" : "View"} ({items.length > 0 ? `${items.length} items` : "Details"})
+                                <ChevronDown size={14} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                              </>
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -444,7 +585,12 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
                               <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-widest flex items-center gap-2">
                                 <ShoppingBag size={16} className="text-blue-400" /> Items Sold Breakdown
                               </h4>
-                              {(!t.transaction_items || t.transaction_items.length === 0) ? (
+                              {isLoadingThisItem ? (
+                                <div className="py-6 flex items-center justify-center gap-2 text-slate-400 text-xs font-bold">
+                                  <Loader2 size={16} className="animate-spin text-blue-400" />
+                                  Loading item records...
+                                </div>
+                              ) : (!items || items.length === 0) ? (
                                 <p className="text-xs text-slate-500 italic">No item details recorded for this transaction.</p>
                               ) : (
                                 <table className="w-full text-left text-xs border-collapse">
@@ -459,7 +605,7 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-800/40">
-                                    {t.transaction_items.map((item, idx) => (
+                                    {items.map((item, idx) => (
                                       <tr key={item.id || idx} className="hover:bg-slate-900/40 transition-colors">
                                         <td className="px-4 py-3 font-bold text-slate-200">{item.product_name}</td>
                                         <td className="px-4 py-3 text-slate-500 font-mono">{item.sku}</td>
@@ -486,18 +632,51 @@ export default function SalesAuditClient({ initialTransactions, branches }: { in
               )}
             </tbody>
           </table>
-          {filteredTransactions.length > 50 && (
-            <div className="p-4 text-center text-slate-500 text-xs italic bg-slate-950/30 border-t border-slate-800/50">
-              Showing 50 most recent transactions... Use exports for full audit history.
-            </div>
-          )}
+        </div>
+
+        {/* Pagination Bar */}
+        <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="text-xs text-slate-400">
+            Page <span className="text-white font-bold">{currentPage}</span> of <span className="text-white font-bold">{totalPages}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1 || isPending}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 flex items-center gap-1 transition-all"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages || isPending}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 flex items-center gap-1 transition-all"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function MetricCard({ title, amount, subtext, icon, color, isCurrency = true }: { title: string, amount: any, subtext?: string, icon: any, color: 'blue' | 'indigo' | 'emerald' | 'rose', isCurrency?: boolean }) {
+function MetricCard({ 
+  title, 
+  amount, 
+  subtext, 
+  icon, 
+  color, 
+  isCurrency = true 
+}: { 
+  title: string; 
+  amount: any; 
+  subtext?: string; 
+  icon: any; 
+  color: 'blue' | 'indigo' | 'emerald' | 'rose'; 
+  isCurrency?: boolean; 
+}) {
   const styles: Record<string, string> = {
     blue: "from-blue-500/20 border-blue-500/30 text-blue-400",
     indigo: "from-indigo-500/20 border-indigo-500/30 text-indigo-400",
@@ -520,7 +699,7 @@ function MetricCard({ title, amount, subtext, icon, color, isCurrency = true }: 
       </div>
       <div className="relative z-10">
         <div className="text-3xl font-extrabold text-white">
-          {isCurrency ? `₦${Number(amount).toFixed(2)}` : amount}
+          {isCurrency ? `₦${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : amount}
         </div>
         {subtext && <div className="text-xs text-slate-500 mt-1 font-medium">{subtext}</div>}
       </div>

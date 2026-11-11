@@ -371,7 +371,11 @@ export async function deleteProductAction(prevState: unknown, productId: string)
   return { success: "Product deleted successfully." };
 }
 
-export async function getSalesDataAction() {
+export async function getSalesDataAction(options?: {
+  branch?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
 
@@ -387,68 +391,180 @@ export async function getSalesDataAction() {
     return { error: "Profile setup incomplete." };
   }
 
-  // Fetch transactions using Admin Client and fetchAllRows to bypass RLS and row limits
   const supabaseAdmin = createAdminClient();
-  try {
-    const transactions = await fetchAllRows(
-      supabaseAdmin,
-      "transactions",
-      "*",
-      "organization_id",
-      profile.organization_id
-    );
+  const limit = options?.limit || 50;
+  const offset = options?.offset || 0;
+  const branch = options?.branch;
 
-    const txIds = (transactions || []).map(t => t.id);
-    let allItems: any[] = [];
+  try {
+    // 1. Fetch recent transactions for live monitoring feed
+    let query = supabaseAdmin
+      .from("transactions")
+      .select("id, organization_id, branch_name, total_amount, payment_method, cashier_name, seller_name, buyer_name, created_at, status, type", { count: "exact" })
+      .eq("organization_id", profile.organization_id)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (branch && branch !== "All Branches") {
+      query = query.eq("branch_name", branch);
+    }
+
+    const { data: transactions, count: totalCount, error: txError } = await query;
+    if (txError) throw txError;
+
+    // 2. Fetch items ONLY for the displayed transactions
+    const txIds = (transactions || []).map((t: any) => t.id);
+    const itemsByTxId: Record<string, any[]> = {};
 
     if (txIds.length > 0) {
-      const batchSize = 100;
-      const batches = [];
-      for (let i = 0; i < txIds.length; i += batchSize) {
-        batches.push(txIds.slice(i, i + batchSize));
-      }
+      const { data: items, error: itemsError } = await supabaseAdmin
+        .from("transaction_items")
+        .select("id, transaction_id, product_name, sku, quantity, unit_price, subtotal, pack_type")
+        .in("transaction_id", txIds);
 
-      const promises = batches.map(batch => 
-        supabaseAdmin
-          .from("transaction_items")
-          .select("*")
-          .in("transaction_id", batch)
-      );
-
-      const results = await Promise.all(promises);
-      for (const res of results) {
-        if (res.error) {
-          throw new Error("Failed to fetch transaction items: " + res.error.message);
-        }
-        if (res.data) {
-          allItems.push(...res.data);
-        }
+      if (!itemsError && items) {
+        items.forEach((item: any) => {
+          if (!itemsByTxId[item.transaction_id]) itemsByTxId[item.transaction_id] = [];
+          itemsByTxId[item.transaction_id].push(item);
+        });
       }
     }
 
-    const itemsByTxId: Record<string, any[]> = {};
-    allItems.forEach(item => {
-      if (!itemsByTxId[item.transaction_id]) {
-        itemsByTxId[item.transaction_id] = [];
-      }
-      itemsByTxId[item.transaction_id].push(item);
-    });
-
-    const transactionsWithItems = (transactions || []).map(t => ({
+    const transactionsWithItems = (transactions || []).map((t: any) => ({
       ...t,
       transaction_items: itemsByTxId[t.id] || []
     }));
 
-    // Re-order locally since fetchAllRows might not preserve order if multiple pages
-    const sortedTransactions = (transactionsWithItems || []).sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    // 3. Analytics / Metrics Calculation:
+    // Try calling high-speed RPC `get_sales_audit_analytics`
+    let analytics: any = null;
+    try {
+      const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("get_sales_audit_analytics", {
+        p_org_id: profile.organization_id,
+        p_branch: branch && branch !== "All Branches" ? branch : null,
+      });
+      if (!rpcError && rpcData) {
+        analytics = rpcData;
+      }
+    } catch {
+      // RPC not created yet, proceed to fallback
+    }
 
-    return { success: true, transactions: sortedTransactions };
+    // Fallback if RPC is not installed in Supabase:
+    if (!analytics) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      // Fetch today's sales
+      let todayQ = supabaseAdmin
+        .from("transactions")
+        .select("total_amount")
+        .eq("organization_id", profile.organization_id)
+        .gte("created_at", today.toISOString());
+      if (branch && branch !== "All Branches") todayQ = todayQ.eq("branch_name", branch);
+      const { data: todayTxs } = await todayQ;
+
+      // Fetch this week's sales
+      let weekQ = supabaseAdmin
+        .from("transactions")
+        .select("total_amount")
+        .eq("organization_id", profile.organization_id)
+        .gte("created_at", startOfWeek.toISOString());
+      if (branch && branch !== "All Branches") weekQ = weekQ.eq("branch_name", branch);
+      const { data: weekTxs } = await weekQ;
+
+      // Fetch this month's sales
+      let monthQ = supabaseAdmin
+        .from("transactions")
+        .select("total_amount, type, created_at")
+        .eq("organization_id", profile.organization_id)
+        .gte("created_at", startOfMonth.toISOString())
+        .limit(5000);
+      if (branch && branch !== "All Branches") monthQ = monthQ.eq("branch_name", branch);
+      const { data: monthTxs } = await monthQ;
+
+      let daily = (todayTxs || []).reduce((acc: number, t: any) => acc + (Number(t.total_amount) || 0), 0);
+      let weekly = (weekTxs || []).reduce((acc: number, t: any) => acc + (Number(t.total_amount) || 0), 0);
+      let monthly = 0;
+      let wholesaleTotal = 0;
+      let retailTotal = 0;
+      let supermarketTotal = 0;
+
+      (monthTxs || []).forEach((t: any) => {
+        const amt = Number(t.total_amount) || 0;
+        monthly += amt;
+        if (t.type === 'wholesale') wholesaleTotal += amt;
+        else if (t.type === 'retail') retailTotal += amt;
+        else if (t.type === 'supermarket') supermarketTotal += amt;
+      });
+
+      // 30-day buckets based on month transactions
+      const last30Days = Array.from({ length: 30 }).map((_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        return Math.floor(d.getTime() / 86400000);
+      }).reverse();
+
+      const grouped: Record<number, number> = {};
+      last30Days.forEach(day => grouped[day] = 0);
+
+      (monthTxs || []).forEach((t: any) => {
+        const day = Math.floor(new Date(t.created_at).getTime() / 86400000);
+        if (grouped[day] !== undefined) {
+          grouped[day] += Number(t.total_amount) || 0;
+        }
+      });
+
+      const chartData = last30Days.map(day => {
+        const d = new Date(day * 86400000);
+        return {
+          date: `${d.getMonth() + 1}/${d.getDate()}`,
+          sales: grouped[day] || 0
+        };
+      });
+
+      analytics = {
+        daily,
+        weekly,
+        monthly,
+        yearly: monthly,
+        last_yearly: 0,
+        yearly_growth: 0,
+        wholesale_total: wholesaleTotal,
+        retail_total: retailTotal,
+        supermarket_total: supermarketTotal,
+        chart_data: chartData,
+      };
+    }
+
+    return {
+      success: true,
+      transactions: transactionsWithItems,
+      totalCount: totalCount || transactionsWithItems.length,
+      analytics,
+    };
   } catch (error: any) {
     console.error("Error fetching sales data:", error);
     return { error: error?.message || error?.toString() || "Failed to fetch sales data." };
   }
+}
+
+export async function getTransactionItemsAction(transactionId: string) {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) return { error: "Unauthorized" };
+
+  const supabaseAdmin = createAdminClient();
+  const { data, error } = await supabaseAdmin
+    .from("transaction_items")
+    .select("id, transaction_id, product_name, sku, quantity, unit_price, subtotal, pack_type")
+    .eq("transaction_id", transactionId);
+
+  if (error) return { error: error.message };
+  return { success: true, items: data || [] };
 }
 
 // Helper to quickly populate test data (since it's a new table)
